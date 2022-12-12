@@ -3,6 +3,14 @@
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC CREATE CATALOG IF NOT EXISTS production;
+# MAGIC USE CATALOG production;
+# MAGIC CREATE SCHEMA IF NOT EXISTS sales;
+# MAGIC USE SCHEMA sales;
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Step 1 - Generate a Private Key 
 # MAGIC * Run the code below to generate a suitable string for an AES 256 private key
@@ -78,11 +86,19 @@ secret_key
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC GRANT USAGE ON CATALOG production to `pii_viewer`;
+# MAGIC GRANT USAGE ON SCHEMA sales to `pii_viewer`;
+# MAGIC GRANT EXECUTE ON FUNCTION decrypt TO `pii_viewer`;
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Step 6 - Create a table with encrypted data
 
 # COMMAND ----------
 
+# This needs to be run on a single user cluster
 generate_fake_pii_data(num_rows=1000).select("customer_id", "email", "date_of_birth", "ssn", "phone_number").createOrReplaceTempView("tmp_vw_customers_raw")
 
 # COMMAND ----------
@@ -93,7 +109,7 @@ generate_fake_pii_data(num_rows=1000).select("customer_id", "email", "date_of_bi
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC CREATE OR REPLACE TABLE silver.customer_data AS (
+# MAGIC CREATE OR REPLACE TABLE customer_data AS (
 # MAGIC     SELECT 
 # MAGIC     customer_id,
 # MAGIC     encrypt(email) AS email, 
@@ -106,7 +122,12 @@ generate_fake_pii_data(num_rows=1000).select("customer_id", "email", "date_of_bi
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM silver.customer_data
+# MAGIC DESCRIBE TABLE EXTENDED customer_data
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT * FROM production.sales.customer_data
 
 # COMMAND ----------
 
@@ -116,7 +137,7 @@ generate_fake_pii_data(num_rows=1000).select("customer_id", "email", "date_of_bi
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC CREATE OR REPLACE VIEW gold.vw_customer_data AS (
+# MAGIC CREATE OR REPLACE VIEW vw_customer_data AS (
 # MAGIC SELECT 
 # MAGIC customer_id
 # MAGIC customer_id,
@@ -136,8 +157,13 @@ generate_fake_pii_data(num_rows=1000).select("customer_id", "email", "date_of_bi
 # MAGIC     is_member('pii_viewer') THEN decrypt(phone_number)
 # MAGIC     ELSE phone_number
 # MAGIC   END AS phone_number
-# MAGIC FROM silver.customer_data
+# MAGIC FROM customer_data
 # MAGIC )
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC GRANT SELECT ON vw_customer_data TO `pii_viewer`
 
 # COMMAND ----------
 
@@ -147,4 +173,4 @@ generate_fake_pii_data(num_rows=1000).select("customer_id", "email", "date_of_bi
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM gold.vw_customer_data
+# MAGIC SELECT * FROM production.sales.vw_customer_data
