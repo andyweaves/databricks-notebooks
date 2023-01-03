@@ -1,5 +1,5 @@
 # Databricks notebook source
-# MAGIC %pip install -q faker mimesis
+# MAGIC %pip install -q faker mimesis presidio_analyzer presidio_anonymizer
 
 # COMMAND ----------
 
