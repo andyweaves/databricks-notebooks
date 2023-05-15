@@ -9,7 +9,7 @@
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC CREATE SCHEMA IF NOT EXISTS raw ;
+# MAGIC CREATE SCHEMA IF NOT EXISTS raw;
 # MAGIC CREATE SCHEMA IF NOT EXISTS processed
 
 # COMMAND ----------
@@ -111,7 +111,7 @@ fpe_encrypt_udf = udf(lambda x: fpe_encrypt(key=key, tweak=tweak, special_char_m
 
 # COMMAND ----------
 
-from pyspark.sql.functions import col, lit
+from pyspark.sql.functions import col
 
 tokenized = (spark.table("raw.fake_pii_data")
   .select(
