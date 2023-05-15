@@ -23,20 +23,24 @@ df.write.mode("overwrite").saveAsTable("raw.fake_pii_data")
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC SELECT
-# MAGIC customer_id,
-# MAGIC regexp_replace(CAST(email AS STRING), '[\\w\\.=-]+@', '') AS email,
-# MAGIC mask(phone_number, "X", "x", "*", " ") AS phone_number,
-# MAGIC mask(postcode, "X", "x", "1", " ") AS postcode,
-# MAGIC regexp_replace(date_of_birth, '(\\d{4})(-|/)(\\d{2})(-|/)(\\d{2})', 'YYYY-MM-DD') AS date_of_birth,
-# MAGIC concat(substring_index(CAST(ipv4 AS STRING), '.', 3), '.0/24') AS ipv4
-# MAGIC FROM diz.raw.fake_pii_data
+import hashlib, uuid
+
+salt = uuid.uuid4().hex
+salt = dbutils.secrets.get("aweaver", "hash_salt")
 
 # COMMAND ----------
 
 # MAGIC %sql
+# MAGIC CREATE OR REPLACE TABLE diz.processed.fake_pii_data_hashed AS (
 # MAGIC SELECT
 # MAGIC customer_id,
-# MAGIC mask(phone_number, NULL, NULL, "0") AS phone_number
+# MAGIC sha2(concat(secret("aweaver", "hash_salt"), email), 256) AS email
 # MAGIC FROM diz.raw.fake_pii_data
+# MAGIC )
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT 
+# MAGIC *
+# MAGIC FROM diz.processed.fake_pii_data_hashed
