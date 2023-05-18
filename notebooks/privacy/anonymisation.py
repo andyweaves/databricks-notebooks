@@ -1,5 +1,5 @@
 # Databricks notebook source
-# MAGIC %run ../common/generate_fake_pii
+# MAGIC %run ../../common/generate_fake_pii
 
 # COMMAND ----------
 

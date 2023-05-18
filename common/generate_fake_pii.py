@@ -1,5 +1,5 @@
 # Databricks notebook source
-# MAGIC %pip install -q -r ../requirements.txt
+# MAGIC %pip install -q -r ../../requirements.txt
 
 # COMMAND ----------
 
@@ -38,7 +38,7 @@ schema = StructType([
   StructField("freetext", StringType(), False)
   ])
 
-fake = Faker("en_GB")
+fake = Faker("en_US")
 generic = Generic(locale=Locale.EN)
 
 def get_random_pii():
