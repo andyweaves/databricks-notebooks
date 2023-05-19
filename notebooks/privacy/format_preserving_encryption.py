@@ -36,9 +36,9 @@ tweak = dbutils.secrets.get("aweaver", "fpe_tweak")
 # Determine what to do with any special characters in the plaintext...
 #   Options are "tokenize", "strip", or "reassemble" where:
 # 
-#     1. "tokenize" -> 
-#     2. "strip" -> 
-#     3. "reassemble" ->  
+#     1. "tokenize" -> Tokenize the whole string including special characters with an ASCII charset 
+#     2. "strip" -> Strip the special characters and tokenize what's left
+#     3. "reassemble" -> Try and preserve the format of the input string by removing the special characters, tokenizing the alphanum characters and then reassembling both afterwards
 #
 special_char_mode="reassemble" 
 
@@ -54,6 +54,8 @@ special_charset = """!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~ """
 # COMMAND ----------
 
 from ff3 import FF3Cipher
+
+# Helper functions
 
 def reassemble_string(string: str, positions: list, characters: str) -> str:
   for i in range(len(positions)):  
@@ -85,6 +87,10 @@ def encrypt(plaintext: str, charset: str) -> str:
 
 # COMMAND ----------
 
+from pyspark.sql.functions import udf
+from pyspark.sql.types import StringType
+
+# Python UDF
 def fpe_encrypt(plaintext: str) -> str:
 
   if plaintext.isnumeric():
@@ -118,18 +124,13 @@ def fpe_encrypt(plaintext: str) -> str:
 
   return ciphertext
 
-# COMMAND ----------
-
-from pyspark.sql.functions import udf
-from pyspark.sql.types import StringType
-
 fpe_encrypt_udf = udf(lambda x: fpe_encrypt(str(x)), StringType())
 
 # COMMAND ----------
 
 from pyspark.sql.functions import col, cast
-from pyspark.sql.types import StringType
 
+# Test the Python UDF
 tokenized = (spark.table("diz.raw.fake_pii_data")
   .select(
     "customer_id",
@@ -156,6 +157,7 @@ display(tokenized)
 
 from pyspark.sql.functions import pandas_udf
 
+# Pandas UDF
 def fpe_encrypt_series(s: pd.Series) -> pd.Series:
 
   return s.astype(str).apply(lambda x: fpe_encrypt(x))
@@ -164,11 +166,7 @@ fpe_encrypt_pandas_udf = pandas_udf(fpe_encrypt_series, returnType=StringType())
 
 # COMMAND ----------
 
-x = pd.Series(["809-81-8331", "GB08TZDS66404627722762", "340429565139169"])
-
-print(fpe_encrypt_series(x))
-
-# COMMAND ----------
+# Test the Pandas UDF
 
 tokenized = (spark.table("diz.raw.fake_pii_data")
   .select(
