@@ -3,21 +3,18 @@
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC USE CATALOG diz
+# MAGIC %md
+# MAGIC ## Step 2: Generate some fake PII data using ```faker```
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC CREATE SCHEMA IF NOT EXISTS raw;
-# MAGIC CREATE SCHEMA IF NOT EXISTS processed
-
-# COMMAND ----------
-
-# Generate some fake PII for us to FPE...
-df = generate_fake_pii_data(num_rows=1000).select("customer_id", "name", "email", "ssn", "iban", "credit_card", "phone_number", "date_of_birth", "ipv4", "ipv6")
-df.write.mode("overwrite").saveAsTable("diz.raw.fake_pii_data")
+df = generate_fake_pii_data(num_rows=100000).select("customer_id", "name", "email", "ssn", "iban", "credit_card", "phone_number", "date_of_birth", "ipv4", "ipv6")
 display(df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Step 2: Setup FPE key and tweak
 
 # COMMAND ----------
 
@@ -131,7 +128,7 @@ fpe_encrypt_udf = udf(lambda x: fpe_encrypt(str(x)), StringType())
 from pyspark.sql.functions import col, cast
 
 # Test the Python UDF
-tokenized = (spark.table("diz.raw.fake_pii_data")
+tokenized = (df
   .select(
     "customer_id",
     "name",
@@ -168,7 +165,7 @@ fpe_encrypt_pandas_udf = pandas_udf(fpe_encrypt_series, returnType=StringType())
 
 # Test the Pandas UDF
 
-tokenized = (spark.table("diz.raw.fake_pii_data")
+tokenized = (df
   .select(
     "customer_id",
     "name",
