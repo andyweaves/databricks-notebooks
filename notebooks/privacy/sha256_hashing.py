@@ -28,7 +28,7 @@ salt = dbutils.secrets.get("aweaver", "hash_salt")
 # MAGIC CREATE OR REPLACE TABLE main.temp.hashed_pii_data AS (
 # MAGIC SELECT
 # MAGIC customer_id,
-# MAGIC sha2(concat(secret("aweaver", "hash_salt"), email), 256) AS email
+# MAGIC base64(unhex(sha2(concat(secret("aweaver", "hash_salt"), email), 256))) AS email
 # MAGIC FROM fake_pii_data
 # MAGIC )
 
