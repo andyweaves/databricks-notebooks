@@ -1,9 +1,13 @@
 # Databricks notebook source
-# MAGIC %run ../../common/presidio
+# MAGIC %run ../../common/install_libs
 
 # COMMAND ----------
 
-CATALOGS = ["main", "aweaver"]
+# MAGIC %run ../../common/functions
+
+# COMMAND ----------
+
+CATALOGS = ["aweaver", "aweaver_dev", "dbdemos", "samples", "sample_data", "spider", "system", "quickstart_catalog"]
 SAMPLE_SIZE = 1000
 LANGUAGE = "en"
 
@@ -14,14 +18,18 @@ AVG_SCORE = 0.50
 
 # COMMAND ----------
 
-from pyspark.sql.functions import asc, col
+from pyspark.sql.functions import asc, col, when, lit
 
 TABLES = None
 
 if not CATALOGS:
-  TABLES = spark.sql("SELECT * FROM system.information_schema.tables").select("table_catalog", "table_schema", "table_name").orderBy(col("table_catalog").asc(), col("table_schema").asc(), col("table_name").asc())
+  TABLES = (spark.sql("SELECT * FROM system.information_schema.tables")
+            .select("table_catalog", "table_schema", "table_name", when(col("table_type") == "VIEW", "VIEW").otherwise(lit("TABLE")).alias("table_type"))
+            .orderBy(col("table_catalog").asc(), col("table_schema").asc(), col("table_name").asc()))
 else:
-  TABLES = TABLES = spark.sql(f"SELECT * FROM system.information_schema.tables WHERE table_catalog IN {tuple(CATALOGS)}").select("table_catalog", "table_schema", "table_name").orderBy(col("table_catalog").asc(), col("table_schema").asc(), col("table_name").asc())
+  TABLES = (spark.sql(f"SELECT * FROM system.information_schema.tables WHERE table_catalog IN {tuple(CATALOGS)}")
+            .select("table_catalog", "table_schema", "table_name", when(col("table_type") == "VIEW", "VIEW").otherwise(lit("TABLE")).alias("table_type"))
+            .orderBy(col("table_catalog").asc(), col("table_schema").asc(), col("table_name").asc()))
 
 display(TABLES)
 
@@ -69,15 +77,18 @@ scan_schema = ArrayType(
 
 def scan_dataframe(input_df):
 
-  input_df = input_df.limit(SAMPLE_SIZE).select([from_json(analyze(col(c)), scan_schema).alias(c) for c in input_df.columns])
+  input_df = input_df.limit(SAMPLE_SIZE).select([from_json(analyze(col(c).cast("string")), scan_schema).alias(c) for c in input_df.columns])
 
   return input_df
 
 # COMMAND ----------
 
-test_df = spark.table("diz.raw.fake_pii_data")
+df = generate_fake_pii_data(num_rows=1000).select("customer_id", "name", "email", "ssn", "iban", "credit_card", "phone_number", "date_of_birth", "ipv4", "ipv6", "freetext")
+display(df)
 
-test_scan = test_df.transform(scan_dataframe)
+# COMMAND ----------
+
+test_scan = df.transform(scan_dataframe)
 display(test_scan)
 
 # COMMAND ----------
@@ -133,11 +144,40 @@ if len(test_results_pdf) > 0:
 
 # COMMAND ----------
 
+scanned = []
+tagged = []
+not_scanned = []
+
 for t in TABLES.collect():
 
   try:
     print(f"Scanning {t.table_catalog}.{t.table_schema}.{t.table_name} for PII")
     scanned = spark.table(f"{t.table_catalog}.{t.table_schema}.{t.table_name}").transform(scan_dataframe)
-    aggregated_results = scanned.transform(get_aggregated_results)
+    aggregated_results = scanned.transform(get_aggregated_results).toPandas()
+    scanned.append(f"{t.table_catalog}.{t.table_schema}.{t.table_name}")
+
+    if len(aggregated_results) > 0:
+
+      try:
+        print(f"Adding PII tags to {t.table_catalog}.{t.table_schema}.{t.table_name}")
+        sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} SET TAGS ('PII')")
+
+        if t.table_type == "TABLE":
+          sql(f"COMMENT ON {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} IS '> # WARNING! This table contains PII'")
+        for index, row in aggregated_results.iterrows():
+          sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} SET TAGS ('{row.entity_type}')")
+          sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} ALTER COLUMN {row.column} SET TAGS ('{row.entity_type}')")
+        tagged.append(f"{t.table_catalog}.{t.table_schema}.{t.table_name}")
+      except Exception as e:
+        print(f"Unable to add PII tags to {t.table_catalog}.{t.table_schema}.{t.table_name} due to exception {e}")
   except Exception as e:
     print(f"Unable to scan {t.table_catalog}.{t.table_schema}.{t.table_name} for PII due to exception {e}")
+    not_scanned.append(f"{t.table_catalog}.{t.table_schema}.{t.table_name}")
+
+for t in not_scanned:
+  print(f"Adding tag 'NOT_PII_SCANNED' to {t}")
+  sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} SET TAGS ('NOT_PII_SCANNED')")
+
+# COMMAND ----------
+
+print(f"Scanned {len(scanned)} tables for PII. Tagged {len(tagged)} tables because they contained PII. Unable to scan {len(not_scanned)} tables.")
