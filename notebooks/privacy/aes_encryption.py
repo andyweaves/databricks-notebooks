@@ -1,16 +1,9 @@
 # Databricks notebook source
-# MAGIC %run ../../common/generate_fake_pii
+# MAGIC %run ../../common/install_libs
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC USE CATALOG diz
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC CREATE SCHEMA IF NOT EXISTS raw;
-# MAGIC CREATE SCHEMA IF NOT EXISTS processed
+# MAGIC %run ../../common/functions
 
 # COMMAND ----------
 

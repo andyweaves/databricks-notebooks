@@ -7,29 +7,55 @@
 
 # COMMAND ----------
 
-CATALOGS = ["aweaver", "aweaver_dev", "dbdemos", "samples", "sample_data", "spider", "system", "quickstart_catalog"]
-SAMPLE_SIZE = 1000
-LANGUAGE = "en"
+catalogs = list(filter(None, [x[0] for x in sql("SHOW CATALOGS").collect()]))
+catalogs.insert(0, "ALL")
+
+# See https://microsoft.github.io/presidio/supported_entities/ 
+supported_entities = ["CREDIT_CARD", "CRYPTO", "DATE_TIME", "EMAIL_ADDRESS", "IBAN_CODE", "IP_ADDRESS", "NRP", "LOCATION", "PERSON", "PHONE_NUMBER", "MEDICAL_LICENSE", "URL", "US_BANK_NUMBER", "US_DRIVER_LICENSE", "US_ITIN", "US_PASSPORT", "US_SSN", "UK_NHS", "ES_NIF", "IT_FISCAL_CODE", "IT_DRIVER_LICENSE", "IT_VAT_CODE", "IT_PASSPORT", "IT_IDENTITY_CARD", "SG_NRIC_FIN", "AU_ABN", "AU_ACN", "AU_TFN", "AU_MEDICARE"]
+supported_entities.insert(0, "ALL")
+
+dbutils.widgets.multiselect(name="catalogs", defaultValue="ALL", choices=catalogs, label="catalogs_to_scan")
+dbutils.widgets.multiselect(name="entities", defaultValue="ALL", choices=supported_entities, label="entities_to_detect")
+dbutils.widgets.dropdown(name="sample_size", defaultValue="1000", choices=["100", "1000", "10000"], label="sample_size")
+dbutils.widgets.dropdown(name="hit_rate", defaultValue="60", choices=["50", "60", "70", "80", "90"], label="hit_rate")
+dbutils.widgets.dropdown(name="average_score", defaultValue="0.5", choices=["0.5", "0.6", "0.7", "0.8", "0.9"], label="average_score")
+
+# To change the language you will need to download the relevant spacy model. See https://microsoft.github.io/presidio/analyzer/languages/
+dbutils.widgets.dropdown(name="language", defaultValue="en", choices=["en"], label="language")
+
+def get_selection(selection, all_options):
+
+  if "ALL" in selection:
+    all_options.remove("ALL")
+    print(all_options)
+    return all_options
+  else:
+    print(selection)
+    return selection
+
+# COMMAND ----------
+
+CATALOGS = tuple(get_selection(selection=dbutils.widgets.get("catalogs").split(","), all_options=catalogs))
+ENTITIES = get_selection(selection=dbutils.widgets.get("entities").split(","), all_options=supported_entities)
+SAMPLE_SIZE = int(dbutils.widgets.get("sample_size"))
+
+# To change the language you will need to download the relevant spacy model. See https://microsoft.github.io/presidio/analyzer/languages/
+LANGUAGE = dbutils.widgets.get("language")
 
 # Reduce false positives by narrowing down the list of entities and introducing a threshold on the confidence score...
-ENTITIES = ["PERSON", "LOCATION", "NRP", "EMAIL_ADDRESS", "IP_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD", "IBAN_CODE", "US_SSN"] # See https://microsoft.github.io/presidio/supported_entities/ 
-HIT_RATE = 60
-AVG_SCORE = 0.50
+HIT_RATE = int(dbutils.widgets.get("hit_rate"))
+AVG_SCORE = float(dbutils.widgets.get("average_score"))
+
+print(f"Scanning catalogs {CATALOGS} for PII entities {ENTITIES} using language {LANGUAGE} with a sample size of {SAMPLE_SIZE}. Filtering results based on a hit rate of {HIT_RATE} and an average score of {AVG_SCORE}...")
 
 # COMMAND ----------
 
 from pyspark.sql.functions import asc, col, when, lit
 
-TABLES = None
-
-if not CATALOGS:
-  TABLES = (spark.sql("SELECT * FROM system.information_schema.tables")
-            .select("table_catalog", "table_schema", "table_name", when(col("table_type") == "VIEW", "VIEW").otherwise(lit("TABLE")).alias("table_type"))
-            .orderBy(col("table_catalog").asc(), col("table_schema").asc(), col("table_name").asc()))
-else:
-  TABLES = (spark.sql(f"SELECT * FROM system.information_schema.tables WHERE table_catalog IN {tuple(CATALOGS)}")
-            .select("table_catalog", "table_schema", "table_name", when(col("table_type") == "VIEW", "VIEW").otherwise(lit("TABLE")).alias("table_type"))
-            .orderBy(col("table_catalog").asc(), col("table_schema").asc(), col("table_name").asc()))
+TABLES = (
+  spark.sql(f"SELECT * FROM system.information_schema.tables WHERE table_catalog IN {CATALOGS}")
+  .select("table_catalog", "table_schema", "table_name", when(col("table_type") == "VIEW", "VIEW").otherwise(lit("TABLE")).alias("table_type"), "created", "last_altered")
+  .orderBy(col("table_catalog").asc(), col("table_schema").asc(), col("table_name").asc()))
 
 display(TABLES)
 
@@ -50,10 +76,6 @@ broadcasted_analyzer = sc.broadcast(analyzer)
 def analyze_text(text: str) -> str:
     analyzer = broadcasted_analyzer.value
     analyzer_results = analyzer.analyze(text=text, language=LANGUAGE, entities=ENTITIES)
-
-    # if not analyzer_results:
-    #   return None
-    # else: 
     return json.dumps([x.to_dict() for x in analyzer_results]) 
 
 def analyze_series(s: pd.Series) -> pd.Series:
@@ -134,27 +156,20 @@ display(test_aggregated_results)
 
 # COMMAND ----------
 
-test_results_pdf = test_aggregated_results.toPandas()
+from datetime import datetime
 
-# COMMAND ----------
+scanned_tables, tagged_tables, unscanned_tables, untagged_tables = [], [], [], []
+today = datetime.today().strftime("%d/%m/%Y")
+tables = TABLES.collect()
 
-if len(test_results_pdf) > 0:
-  for index, row in test_results_pdf.iterrows():
-    print(f"{row.column} {row.entity_type} {row.num_entities} {row.avg_score} {row.sample_size} {row.hit_rate}") 
-
-# COMMAND ----------
-
-scanned = []
-tagged = []
-not_scanned = []
-
-for t in TABLES.collect():
+for t in tables:
 
   try:
+
     print(f"Scanning {t.table_catalog}.{t.table_schema}.{t.table_name} for PII")
     scanned = spark.table(f"{t.table_catalog}.{t.table_schema}.{t.table_name}").transform(scan_dataframe)
     aggregated_results = scanned.transform(get_aggregated_results).toPandas()
-    scanned.append(f"{t.table_catalog}.{t.table_schema}.{t.table_name}")
+    scanned_tables.append(t)
 
     if len(aggregated_results) > 0:
 
@@ -163,21 +178,61 @@ for t in TABLES.collect():
         sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} SET TAGS ('PII')")
 
         if t.table_type == "TABLE":
-          sql(f"COMMENT ON {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} IS '> # WARNING! This table contains PII'")
-        for index, row in aggregated_results.iterrows():
-          sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} SET TAGS ('{row.entity_type}')")
-          sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} ALTER COLUMN {row.column} SET TAGS ('{row.entity_type}')")
-        tagged.append(f"{t.table_catalog}.{t.table_schema}.{t.table_name}")
+          table_comment = f"""
+> # WARNING! This table contains PII
+> Table Scanned on {today}"""
+          
+          sql(f"COMMENT ON {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} IS '{table_comment}'")
+        
+        for index, value in aggregated_results["column"].drop_duplicates().items():
+
+          result = aggregated_results[aggregated_results["column"] == value] 
+          column_json = []
+
+          for index, row in result.iterrows():
+            
+            sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} SET TAGS ('{row.entity_type}')")
+            column_json.append(row.to_json(indent=2))
+            
+          column_comment = f"""
+'> ### WARNING! This column contains PII
+```
+{json.dumps(column_json)}
+```
+'"""
+          sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} ALTER COLUMN {row.column} COMMENT {column_comment}")
+
+          if t.table_type == "TABLE":
+            sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} ALTER COLUMN {row.column} SET TAGS ('{row.entity_type}')")
+        tagged_tables.append(t)
+
       except Exception as e:
         print(f"Unable to add PII tags to {t.table_catalog}.{t.table_schema}.{t.table_name} due to exception {e}")
-  except Exception as e:
-    print(f"Unable to scan {t.table_catalog}.{t.table_schema}.{t.table_name} for PII due to exception {e}")
-    not_scanned.append(f"{t.table_catalog}.{t.table_schema}.{t.table_name}")
+        untagged_tables.append(t)
 
-for t in not_scanned:
-  print(f"Adding tag 'NOT_PII_SCANNED' to {t}")
-  sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} SET TAGS ('NOT_PII_SCANNED')")
+  except Exception as e:
+
+    print(f"Unable to scan {t.table_catalog}.{t.table_schema}.{t.table_name} for PII due to exception {e}")
+    unscanned_tables.append(t)
+
+for t in unscanned_tables:
+
+  try:
+
+    print(f"Adding tag 'NOT_PII_SCANNED' to {t.table_catalog}.{t.table_schema}.{t.table_name}")
+    if t.table_type == "TABLE":
+      sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} SET TAGS ('NOT_PII_SCANNED')")
+
+  except Exception as e:
+
+    print(f"Unable to add NOT_PII_SCANNED tags to {t.table_catalog}.{t.table_schema}.{t.table_name} due to exception {e}")
+    untagged_tables.append(t)  
 
 # COMMAND ----------
 
-print(f"Scanned {len(scanned)} tables for PII. Tagged {len(tagged)} tables because they contained PII. Unable to scan {len(not_scanned)} tables.")
+print(f"""
+Scanned {len(scanned_tables)} of {len(tables)} tables for PII. 
+Tagged {len(tagged_tables)} tables because they contained PII. 
+Unable to scan {len(unscanned_tables)} tables.
+Unable to tag {len(untagged_tables)} tables.
+""")
