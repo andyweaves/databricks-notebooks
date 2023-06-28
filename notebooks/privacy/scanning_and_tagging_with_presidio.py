@@ -7,11 +7,13 @@
 
 # COMMAND ----------
 
-catalogs = list(filter(None, [x[0] for x in sql("SHOW CATALOGS").collect()]))
+all_catalogs = list(filter(None, [x[0] for x in sql("SHOW CATALOGS").collect()]))
+catalogs = all_catalogs.copy()
 catalogs.insert(0, "ALL")
 
 # See https://microsoft.github.io/presidio/supported_entities/ 
-supported_entities = ["CREDIT_CARD", "CRYPTO", "DATE_TIME", "EMAIL_ADDRESS", "IBAN_CODE", "IP_ADDRESS", "NRP", "LOCATION", "PERSON", "PHONE_NUMBER", "MEDICAL_LICENSE", "URL", "US_BANK_NUMBER", "US_DRIVER_LICENSE", "US_ITIN", "US_PASSPORT", "US_SSN", "UK_NHS", "ES_NIF", "IT_FISCAL_CODE", "IT_DRIVER_LICENSE", "IT_VAT_CODE", "IT_PASSPORT", "IT_IDENTITY_CARD", "SG_NRIC_FIN", "AU_ABN", "AU_ACN", "AU_TFN", "AU_MEDICARE"]
+all_supported_entities = ["CREDIT_CARD", "CRYPTO", "DATE_TIME", "EMAIL_ADDRESS", "IBAN_CODE", "IP_ADDRESS", "NRP", "LOCATION", "PERSON", "PHONE_NUMBER", "MEDICAL_LICENSE", "URL", "US_BANK_NUMBER", "US_DRIVER_LICENSE", "US_ITIN", "US_PASSPORT", "US_SSN", "UK_NHS", "ES_NIF", "IT_FISCAL_CODE", "IT_DRIVER_LICENSE", "IT_VAT_CODE", "IT_PASSPORT", "IT_IDENTITY_CARD", "SG_NRIC_FIN", "AU_ABN", "AU_ACN", "AU_TFN", "AU_MEDICARE"]
+supported_entities = all_supported_entities.copy()
 supported_entities.insert(0, "ALL")
 
 dbutils.widgets.multiselect(name="catalogs", defaultValue="ALL", choices=catalogs, label="catalogs_to_scan")
@@ -19,24 +21,20 @@ dbutils.widgets.multiselect(name="entities", defaultValue="ALL", choices=support
 dbutils.widgets.dropdown(name="sample_size", defaultValue="1000", choices=["100", "1000", "10000"], label="sample_size")
 dbutils.widgets.dropdown(name="hit_rate", defaultValue="60", choices=["50", "60", "70", "80", "90"], label="hit_rate")
 dbutils.widgets.dropdown(name="average_score", defaultValue="0.5", choices=["0.5", "0.6", "0.7", "0.8", "0.9"], label="average_score")
-
 # To change the language you will need to download the relevant spacy model. See https://microsoft.github.io/presidio/analyzer/languages/
 dbutils.widgets.dropdown(name="language", defaultValue="en", choices=["en"], label="language")
 
 def get_selection(selection, all_options):
 
   if "ALL" in selection:
-    all_options.remove("ALL")
-    print(all_options)
     return all_options
   else:
-    print(selection)
     return selection
 
 # COMMAND ----------
 
-CATALOGS = tuple(get_selection(selection=dbutils.widgets.get("catalogs").split(","), all_options=catalogs))
-ENTITIES = get_selection(selection=dbutils.widgets.get("entities").split(","), all_options=supported_entities)
+CATALOGS = tuple(get_selection(selection=dbutils.widgets.get("catalogs").split(","), all_options=all_catalogs))
+ENTITIES = get_selection(selection=dbutils.widgets.get("entities").split(","), all_options=all_supported_entities)
 SAMPLE_SIZE = int(dbutils.widgets.get("sample_size"))
 
 # To change the language you will need to download the relevant spacy model. See https://microsoft.github.io/presidio/analyzer/languages/
