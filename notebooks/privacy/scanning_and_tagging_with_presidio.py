@@ -183,15 +183,16 @@ for t in tables:
         sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} SET TAGS ('PII')")
 
         if t.table_type == "TABLE":
+
           table_comment = f"""
-> # WARNING! This table contains PII
-> Table Scanned on {today}"""
+> # `WARNING! This table contains PII`
+> Table Scanned on `{today}`"""
           
           sql(f"COMMENT ON {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} IS '{table_comment}'")
         
         for index, value in aggregated_results["column"].drop_duplicates().items():
 
-          result = aggregated_results[aggregated_results["column"] == value]
+          result = aggregated_results[aggregated_results["column"] == value] 
           column_json = []
 
           for index, row in result.iterrows():
@@ -200,20 +201,20 @@ for t in tables:
             column_json.append(row.to_json(indent=2))
             
           column_comment = f"""
-'> ### WARNING! This column contains PII
+---
+### `WARNING! This column contains PII`
 ```
 {json.dumps(column_json)}
 ```
-'"""
+"""
 
           if t.table_type == "TABLE":
 
             sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} ALTER COLUMN {row.column} SET TAGS ('{row.entity_type}')")
-            sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} ALTER COLUMN {row.column} COMMENT {column_comment}")
+            sql(f"ALTER {t.table_type} {t.table_catalog}.{t.table_schema}.{t.table_name} ALTER COLUMN {row.column} COMMENT '{column_comment}'")
         tagged_tables.append(t)
 
       except Exception as e:
-
         print(f"Unable to add PII tags to {t.table_catalog}.{t.table_schema}.{t.table_name} due to exception {e}")
         untagged_tables.append(t)
 
