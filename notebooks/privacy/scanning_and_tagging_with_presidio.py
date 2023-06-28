@@ -126,6 +126,13 @@ results_schema = StructType([
 
 def get_aggregated_results(df):
 
+  df_size = df.count()
+
+  if df_size != SAMPLE_SIZE:
+    sample_size = df_size
+  else:
+    sample_size = SAMPLE_SIZE
+
   agg_df = spark.createDataFrame([], results_schema)
 
   for c in df.columns:
@@ -139,7 +146,7 @@ def get_aggregated_results(df):
     .agg(
       count("entity_type").alias("num_entities"),
       mean("score").alias("avg_score"))
-    .withColumn("sample_size", lit(SAMPLE_SIZE))
+    .withColumn("sample_size", lit(sample_size))
     .withColumn("hit_rate", col("num_entities") / col("sample_size") * 100)
     .where(f"hit_rate >= {HIT_RATE} AND avg_score >= {AVG_SCORE}"))
 
