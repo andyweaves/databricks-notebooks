@@ -204,8 +204,8 @@ class PIIScanner:
   def add_column_tag(self, securable_namespace: str, securable_type: str, column: str, tag: str) -> None:
 
     try:
-      print(f"Adding tag '{tag}' to column '{column}' on {securable_type} {securable_namespace}")
-      sql(f"ALTER {securable_type} {securable_namespace} ALTER COLUMN SET '{column}' TAGS ('{tag}')")
+      print(f"Adding tag '{tag}' to column {column} on {securable_type} {securable_namespace}")
+      sql(f"ALTER {securable_type} {securable_namespace} ALTER COLUMN {column} SET TAGS ('{tag}')")
     
     except Exception as e:
       print(f"Failed to add tag '{tag}' to column '{column}' on {securable_type} {securable_namespace} because of exception {e}")
@@ -222,26 +222,24 @@ class PIIScanner:
   def add_column_comment(self, securable_namespace: str, securable_type: str, column: str, comment: str) -> None:
 
     try:
-      print(f"Adding comment '{comment}' to column '{column}' on {securable_type} {securable_namespace}")
-      sql(f"ALTER {securable_type} {securable_namespace} ALTER COLUMN '{column}' COMMENT '{comment}'")
+      print(f"Adding comment '{comment}' to column {column} on {securable_type} {securable_namespace}")
+      sql(f"ALTER {securable_type} {securable_namespace} ALTER COLUMN {column} COMMENT '{comment}'")
     
     except Exception as e:
       print(f"Failed to add comment '{comment}' to column '{column}' on {securable_type} {securable_namespace} because of exception {e}")
   
   def _get_table_comment(self, date: datetime.date) -> str:
 
-    return f"""
-> # `WARNING! This table contains PII`
+    return f"""> # `WARNING! This table contains PII`
 # Table Scanned on `{date}`"""
 
   def _get_column_comment(self, column_json) -> str:
 
-    return f"""---
-  > ## `WARNING! This column contains PII`
-  ```
-  {json.dumps(column_json)}
-  ```
-  """
+    return f"""> # WARNING! This column contains PII:
+```
+{json.dumps(column_json)}
+```
+"""
 
   def scan_and_tag_securable(self, securable_namespace: str, securable_type: str) -> DataFrame:
 
@@ -253,18 +251,24 @@ class PIIScanner:
     results = self._get_aggregated_results(scanned).toPandas()
 
     if len(results) > 0:
+
       self.add_tag(securable_namespace=securable_namespace, securable_type=securable_type, tag='PII')
       if securable_type == "TABLE":
         self.add_comment(securable_namespace=securable_namespace, securable_type=securable_type, comment=self._get_table_comment(today))
+
       for index, value in results["column"].drop_duplicates().items():
+
         result = results[results["column"] == value] 
         column_json = []
+
         for index, row in result.iterrows():
           self.add_tag(securable_namespace, securable_type, row.entity_type)
           column_json.append(row.to_json(indent=2))
+          if securable_type == "TABLE":
+            self.add_column_tag(securable_namespace=securable_namespace, securable_type=securable_type, column=row.column, tag=row.entity_type)
         if securable_type == "TABLE":
-          self.add_column_tag(securable_namespace=securable_namespace, securable_type=securable_type, column=row.column, tag=row.entity_type)
-          self.add_column_comment(self, securable_namespace=securable_namespace, securable_type=securable_type, column=row.column, comment=self._get_column_comment(column_json))
+          self.add_column_comment(securable_namespace=securable_namespace, securable_type=securable_type, column=row.column, comment=self._get_column_comment(column_json))
+
       results.insert(0, "scan_date", today)
       results.insert(1, "securable", securable_namespace)
     return results

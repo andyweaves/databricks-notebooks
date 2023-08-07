@@ -16,9 +16,11 @@ supported_entities.insert(0, "ALL")
 
 dbutils.widgets.multiselect(name="catalogs", defaultValue="ALL", choices=catalogs, label="catalogs_to_scan")
 dbutils.widgets.multiselect(name="entities", defaultValue="ALL", choices=supported_entities, label="entities_to_detect")
+dbutils.widgets.multiselect(name="language", defaultValue="en", choices=["en"], label="language")
   
 catalogs = tuple(get_selection(selection=dbutils.widgets.get("catalogs").split(","), all_options=all_catalogs))
 entities = get_selection(selection=dbutils.widgets.get("entities").split(","), all_options=all_supported_entities)
+language = dbutils.widgets.get("language")
 
 # COMMAND ----------
 
@@ -29,7 +31,7 @@ broadcasted_analyzer = sc.broadcast(AnalyzerEngine())
 # In an ideal world we would define the UDFs in the class, but a Spark UDF can only be defined in a class as a static method...
 def analyze_text(text: str) -> str:
     analyzer = broadcasted_analyzer.value
-    analyzer_results = analyzer.analyze(text=text, entities=entities, language="en")
+    analyzer_results = analyzer.analyze(text=text, entities=entities, language=language)
     return json.dumps([x.to_dict() for x in analyzer_results]) 
 
 def analyze_series(s: pd.Series) -> pd.Series:
@@ -37,7 +39,7 @@ def analyze_series(s: pd.Series) -> pd.Series:
 
 analyze_udf = pandas_udf(analyze_series, returnType=StringType())
 
-pii_scanner = PIIScanner(spark=spark, broadcasted_analyzer=broadcasted_analyzer, entities=entities, language="en")
+pii_scanner = PIIScanner(spark=spark, broadcasted_analyzer=broadcasted_analyzer, entities=entities, language=language,  sample_size=1000, average_score=0.5, hit_rate=60)
 
 # COMMAND ----------
 
@@ -75,4 +77,4 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as execut
 
 # COMMAND ----------
 
-display(scan_results.sort_values(by=["securable"]))
+display(scan_results)
