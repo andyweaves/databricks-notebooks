@@ -228,7 +228,7 @@ class PIIScanner:
     except Exception as e:
       print(f"Failed to add comment '{comment}' to column '{column}' on {securable_type} {securable_namespace} because of exception {e}")
   
-  def _get_table_comment(self, date: datetime.date) -> str:
+  def _get_table_comment(self, date: date) -> str:
 
     return f"""> # `WARNING! This table contains PII`
 # Table Scanned on `{date}`"""
