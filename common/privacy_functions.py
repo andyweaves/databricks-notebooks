@@ -1,7 +1,7 @@
 # Databricks notebook source
 import pandas as pd
 from typing import Iterator
-from pyspark.sql.functions import pandas_udf, col, spark_partition_id, asc
+from pyspark.sql.functions import pandas_udf, col, spark_partition_id, asc, create_map, array
 from pyspark.sql.types import *
 import time
 from datetime import date
@@ -41,6 +41,26 @@ def get_customer_id(batch_iter: Iterator[pd.Series]) -> Iterator[pd.Series]:
   for id in batch_iter:
       yield int(time.time()) + id
 
+pii_struct_schema = StructType([
+    StructField("email_address", StringType(), False),
+    StructField("ipv4_private", StringType(), False),
+    StructField("ip_address_v6", StringType(), False),
+    StructField("ipv4_with_port", StringType(), False),
+    StructField("mac", StringType(), False),
+    StructField("imei", StringType(), False),
+    StructField("credit_card_number", StringType(), False), 
+    StructField("credit_card_expiration_date", StringType(), False), 
+    StructField("cvv", StringType(), False), 
+    StructField("paypal", StringType(), False), 
+    StructField("random_text_with_email", StringType(), False),
+    StructField("random_text_with_ipv4", StringType(), False)
+])
+
+def pii_struct():
+  return (generic.person.email(), fake.ipv4_private(), fake.ipv6(), generic.internet.ip_v4_with_port(), generic.internet.mac_address(), generic.code.imei(), generic.payment.credit_card_number(), generic.payment.credit_card_expiration_date(), generic.payment.cvv(), generic.payment.paypal(), f"{fake.catch_phrase()} {generic.person.email()}", f"{fake.catch_phrase()} {fake.ipv4_public()}")
+
+pii_struct_udf = udf(pii_struct, pii_struct_schema)
+
 def generate_fake_data(pdf: pd.DataFrame) -> pd.DataFrame:
     
   def generate_data(y):
@@ -77,6 +97,9 @@ def generate_fake_pii_data(num_rows=1000):
   .withColumn("partition_id", spark_partition_id())
   .groupBy("partition_id")
   .applyInPandas(generate_fake_data, schema)
+  .withColumn("pii_struct", pii_struct_udf())
+  .withColumn("pii_map", create_map(lit("email_address"), col("email"), lit("ip_address"), col("ipv4"), lit("home_address"), col("address"))) 
+  .withColumn("pii_array", array("email", "ipv4", "ipv6"))
   .orderBy(asc("customer_id")))
 
 # COMMAND ----------
@@ -134,12 +157,16 @@ class PIIScanner:
       print(f"PII Scanner initialized using language {self.language.upper()}. Looking for entities {self.entities} with a sample size of {self.sample_size}, an average score of {self.average_score} and a hit rate of {self.hit_rate}.")
 
   @staticmethod
-  def get_all_uc_tables(spark: SparkSession, catalogs: list) -> DataFrame:
+  def get_all_uc_tables(spark: SparkSession, catalogs: tuple) -> DataFrame:
 
-    print(f"Getting all uc tables in catalogs {catalogs}")
-  
+    sql_clause = None
+    print(f"Getting all uc tables in catalogs {', '.join(catalogs)}")
+    if len(catalogs) == 1:
+      sql_clause = f"table_catalog IN ('{catalogs[0]}')"
+    else:
+      sql_clause = f"table_catalog IN {catalogs}"
     return (
-      spark.sql(f"SELECT * FROM system.information_schema.tables WHERE table_catalog IN {catalogs}")
+      spark.sql(f"SELECT * FROM system.information_schema.tables WHERE {sql_clause}")
       .select("table_catalog", 
               "table_schema", 
               "table_name",
@@ -192,41 +219,38 @@ class PIIScanner:
 
     return results
   
-  def add_tag(self, securable_namespace: str, securable_type: str, tag: str) -> None:
+  def add_tag(self, securable_namespace: str, securable_type: str, tag: str, column: str=None) -> None:
 
-    try:
-      print(f"Adding tag '{tag}' to {securable_type} {securable_namespace}")
-      sql(f"ALTER {securable_type} {securable_namespace} SET TAGS ('{tag}')")
+    sql_query, log_message = None, None
+    if column:
+      sql_query = f"ALTER {securable_type} {securable_namespace} ALTER COLUMN {column} SET TAGS ('{tag}')"
+      log_message = f"Adding tag '{tag}' to column {column} on {securable_type} {securable_namespace}"
+    else:
+      sql_query = f"ALTER {securable_type} {securable_namespace} SET TAGS ('{tag}')"
+      log_message = f"Adding tag '{tag}' to {securable_type} {securable_namespace}"
     
+    try:
+      print(log_message)
+      self.spark.sql(sql_query)
     except Exception as e:
       print(f"Failed to add tag '{tag}' to {securable_type} {securable_namespace} because of exception {e}")
 
-  def add_column_tag(self, securable_namespace: str, securable_type: str, column: str, tag: str) -> None:
+  def add_comment(self, securable_namespace: str, securable_type: str, comment: str, column: str=None) -> None:
+
+    sql_query, log_message = None, None
+    if column:
+      sql_query = f"ALTER {securable_type} {securable_namespace} ALTER COLUMN {column} COMMENT '{comment}'"
+      log_message = f"Adding comment to column {column} on {securable_type} {securable_namespace}"
+    else:
+      sql_query = f"COMMENT ON {securable_type} {securable_namespace} IS '{comment}'"
+      log_message = f"Adding comment to {securable_type} {securable_namespace}"
 
     try:
-      print(f"Adding tag '{tag}' to column {column} on {securable_type} {securable_namespace}")
-      sql(f"ALTER {securable_type} {securable_namespace} ALTER COLUMN {column} SET TAGS ('{tag}')")
+      print(log_message)
+      self.spark.sql(sql_query)
     
     except Exception as e:
-      print(f"Failed to add tag '{tag}' to column '{column}' on {securable_type} {securable_namespace} because of exception {e}")
-
-  def add_comment(self, securable_namespace: str, securable_type: str, comment: str) -> None:
-
-    try:
-      print(f"Adding comment '{comment}' to {securable_type} {securable_namespace}")
-      sql(f"COMMENT ON {securable_type} {securable_namespace} IS '{comment}'")
-    
-    except Exception as e:
-      print(f"Failed to add comment '{comment}' to {securable_type} {securable_namespace} because of exception {e}")
-
-  def add_column_comment(self, securable_namespace: str, securable_type: str, column: str, comment: str) -> None:
-
-    try:
-      print(f"Adding comment '{comment}' to column {column} on {securable_type} {securable_namespace}")
-      sql(f"ALTER {securable_type} {securable_namespace} ALTER COLUMN {column} COMMENT '{comment}'")
-    
-    except Exception as e:
-      print(f"Failed to add comment '{comment}' to column '{column}' on {securable_type} {securable_namespace} because of exception {e}")
+      print(f"Failed to add comment to {securable_type} {securable_namespace} because of exception {e}")
   
   def _get_table_comment(self, date: date) -> str:
 
@@ -265,10 +289,9 @@ class PIIScanner:
           self.add_tag(securable_namespace, securable_type, row.entity_type)
           column_json.append(row.to_json(indent=2))
           if securable_type == "TABLE":
-            self.add_column_tag(securable_namespace=securable_namespace, securable_type=securable_type, column=row.column, tag=row.entity_type)
+            self.add_tag(securable_namespace=securable_namespace, securable_type=securable_type, tag=row.entity_type, column=row.column)
         if securable_type == "TABLE":
-          self.add_column_comment(securable_namespace=securable_namespace, securable_type=securable_type, column=row.column, comment=self._get_column_comment(column_json))
-
-      results.insert(0, "scan_date", today)
-      results.insert(1, "securable", securable_namespace)
+          self.add_comment(securable_namespace=securable_namespace, securable_type=securable_type, comment=self._get_column_comment(column_json), column=row.column)
+    results.insert(0, "scan_date", today)
+    results.insert(1, "securable", securable_namespace)
     return results

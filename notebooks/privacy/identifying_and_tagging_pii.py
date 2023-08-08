@@ -3,7 +3,7 @@
 
 # COMMAND ----------
 
-# MAGIC %run ../../common/functions
+# MAGIC %run ../../common/privacy_functions
 
 # COMMAND ----------
 
