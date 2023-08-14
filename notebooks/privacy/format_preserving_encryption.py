@@ -12,7 +12,7 @@
 
 # COMMAND ----------
 
-df = generate_fake_pii_data(num_rows=1000).drop("age", "postcode", "expiry_date", "security_code", "pii_struct", "pii_map", "pii_array")
+df = generate_fake_pii_data(num_rows=1000).drop("age", "postcode", "expiry_date", "security_code", "pii_struct", "pii_map", "pii_array", "address", "freetext")
 display(df)
 
 # COMMAND ----------
@@ -71,6 +71,7 @@ from ff3 import FF3Cipher
 
 # Helper functions
 def reassemble_string(string: str, positions: list, characters: str) -> str:
+
   for i in range(len(positions)):  
     pos = positions[i]   
     char = characters[i]  
@@ -120,8 +121,8 @@ from pyspark.sql.types import StringType
 def fpe_encrypt_or_decrypt(text: str, operation: str) -> str:
 
   output = None
-  if len(text) < 6:
-    raise ValueError(f"Input string length {len(text)} is not within minimum bounds: {text}")
+  if len(text) < 6 or len(text) > 50:
+    raise ValueError(f"Input string length {len(text)} is not within minimum or maximum bounds: {text}")
 
   if text.isnumeric():
     output = encrypt_or_decrypt(text, NUMERIC_CHARSET, operation)
@@ -183,7 +184,6 @@ encrypted = (df
     fpe_encrypt_pandas_udf(col("name")).alias("encrypted_name"),
     fpe_encrypt_pandas_udf(col("email")).alias("encrypted_email"),
     fpe_encrypt_pandas_udf(col("date_of_birth").cast("string")).alias("encrypted_date_of_birth"),
-    fpe_encrypt_pandas_udf(col("address")).alias("encrypted_address"),
     fpe_encrypt_pandas_udf(col("ssn")).alias("encrypted_ssn"),
     fpe_encrypt_pandas_udf(col("ipv4")).alias("encrypted_ipv4"),
     fpe_encrypt_pandas_udf(col("ipv6")).alias("encrypted_ipv6"),
@@ -191,7 +191,6 @@ encrypted = (df
     fpe_encrypt_pandas_udf(col("phone_number")).alias("encrypted_phone_number"),
     fpe_encrypt_pandas_udf(col("iban")).alias("encrypted_iban"),
     fpe_encrypt_pandas_udf(col("credit_card").cast("string")).alias("encrypted_credit_card"),
-    fpe_encrypt_pandas_udf(col("freetext").cast("string")).alias("encrypted_freetext")
   ))
 display(encrypted)
 
@@ -208,7 +207,6 @@ decrypted = (encrypted
     fpe_decrypt_pandas_udf(col("encrypted_name")).alias("decrypted_name"),
     fpe_decrypt_pandas_udf(col("encrypted_email")).alias("decrypted_email"),
     fpe_decrypt_pandas_udf(col("encrypted_date_of_birth").cast("string")).alias("decrypted_date_of_birth"),
-    fpe_decrypt_pandas_udf(col("encrypted_address")).alias("decrypted_address"),
     fpe_decrypt_pandas_udf(col("encrypted_ssn")).alias("decrypted_ssn"),
     fpe_decrypt_pandas_udf(col("encrypted_ipv4")).alias("decrypted_ipv4"),
     fpe_decrypt_pandas_udf(col("encrypted_ipv6")).alias("decrypted_ipv6"),
@@ -216,6 +214,5 @@ decrypted = (encrypted
     fpe_decrypt_pandas_udf(col("encrypted_phone_number")).alias("decrypted_phone_number"),
     fpe_decrypt_pandas_udf(col("encrypted_iban")).alias("decrypted_iban"),
     fpe_decrypt_pandas_udf(col("encrypted_credit_card").cast("string")).alias("decrypted_credit_card"),
-    fpe_decrypt_pandas_udf(col("encrypted_freetext").cast("string")).alias("decrypted_freetext"),
   ))
 display(decrypted)
