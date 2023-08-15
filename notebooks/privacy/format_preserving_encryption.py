@@ -12,7 +12,7 @@
 
 # COMMAND ----------
 
-df = generate_fake_pii_data(num_rows=1000).drop("age", "postcode", "expiry_date", "security_code", "pii_struct", "pii_map", "pii_array", "address", "freetext")
+df = generate_fake_pii_data(num_rows=1000).drop("age", "postcode", "expiry_date", "security_code", "pii_struct", "pii_map", "pii_array", "freetext") 
 display(df)
 
 # COMMAND ----------
@@ -80,11 +80,10 @@ def reassemble_string(string: str, positions: list, characters: str) -> str:
 
 def encrypt_or_decrypt(text: str, charset: str, operation: str) -> str:
 
-  output = None
   c = FF3Cipher.withCustomAlphabet(key, tweak, charset)
+  split_string = lambda string: (lambda s: s[:-1] + [s[-2] + s[-1]] if len(s[-1]) < 4 else s)([string[i:i+23] for i in range(0, len(string), 23)])
 
   if len(text) > 28:
-    split_string = lambda string: (lambda s: s[:-1] + [s[-2] + s[-1]] if len(s[-1]) < 4 else s)([string[i:i+23] for i in range(0, len(string), 23)])  
     split = split_string(text)
     if operation == "ENCRYPT":
       output = "".join(list(map(lambda x: c.encrypt(x), split)))
@@ -98,19 +97,17 @@ def encrypt_or_decrypt(text: str, charset: str, operation: str) -> str:
     elif operation == "DECRYPT":
       output = c.decrypt(text)
     else:
-      raise NotImplementedError("Invalid option - must be 'ENCRYPT' or 'DECRYPT'")
+      raise NotImplementedError("Invalid option - must be 'ENCRYPT' or 'DECRYPT'")  
   return output
   
 def encrypt_or_decrypt_alpha(text: str, operation: str) -> str:
 
-  output = None
   if text.isupper():
-    output = encrypt_or_decrypt(text, ALPA_CHARSET_UPPER, operation) 
+    return encrypt_or_decrypt(text, ALPA_CHARSET_UPPER, operation) 
   elif text.islower():
-    output = encrypt_or_decrypt(text, ALPHA_CHARSET_LOWER, operation) 
+    return encrypt_or_decrypt(text, ALPHA_CHARSET_LOWER, operation) 
   else:  
-    output = encrypt_or_decrypt(text, ALPHA_CHARSET_ALL, operation)
-  return output 
+    return encrypt_or_decrypt(text, ALPHA_CHARSET_ALL, operation)
 
 # COMMAND ----------
 
@@ -120,36 +117,34 @@ from pyspark.sql.types import StringType
 # Encryption functions...
 def fpe_encrypt_or_decrypt(text: str, operation: str) -> str:
 
-  output = None
-  if len(text) < 6 or len(text) > 50:
-    raise ValueError(f"Input string length {len(text)} is not within minimum or maximum bounds: {text}")
+  if len(text) < 6: 
+    raise ValueError(f"Input string length {len(text)} is not within minimum bounds: {text}")
 
   if text.isnumeric():
-    output = encrypt_or_decrypt(text, NUMERIC_CHARSET, operation)
+    return encrypt_or_decrypt(text, NUMERIC_CHARSET, operation)
+  
+  elif text.isalnum():
+    return encrypt_or_decrypt(text, ALPHANUMERIC_CHARSET, operation)
     
   elif text.isalpha():
-    output = encrypt_or_decrypt_alpha(text, operation)
-
-  elif text.isalnum():
-    output = encrypt_or_decrypt(text, ALPHANUMERIC_CHARSET, operation) 
+    return encrypt_or_decrypt_alpha(text, operation)
   
   elif text.isascii():
 
     import re
-    encrypt_or_decrypt_by_type = lambda x : encrypt_or_decrypt(x, NUMERIC_CHARSET, operation) if x.isnumeric() else encrypt_or_decrypt_alpha(x, operation) if x.isalpha() else encrypt_or_decrypt(x, ALPHANUMERIC_CHARSET, operation) if x.isalnum() else None 
+    encrypt_or_decrypt_by_type = lambda x, y : encrypt_or_decrypt(x, NUMERIC_CHARSET, y) if x.isnumeric() else encrypt_or_decrypt(x, ALPHANUMERIC_CHARSET, y) if x.isalnum() else encrypt_or_decrypt_alpha(x, y) if x.isalpha() else None 
 
     if SPECIAL_CHAR_MODE == "TOKENIZE":
-      output = encrypt_or_decrypt(text, ASCII_CHARSET, operation)  
-
+      return encrypt_or_decrypt(text, ASCII_CHARSET, operation)  
     elif SPECIAL_CHAR_MODE == "REASSEMBLE":
       extract_special_chars = lambda string: ([char for char in re.findall(r"[^\w]", string)], [i for i, char in enumerate(string) if char in SPECIAL_CHARSET])  
       characters, positions = extract_special_chars(text)
-      text = re.sub("([^a-zA-Z0-9])", "", text)
-      output = encrypt_or_decrypt_by_type(text)
-      output = reassemble_string(output, positions, characters)
+      removed = re.sub("([^a-zA-Z0-9])", "", text)
+      encrypted_decrypted = encrypt_or_decrypt_by_type(removed, operation)
+      reassembled = reassemble_string(encrypted_decrypted, positions, characters)
+      return reassembled
     else:
       raise NotImplementedError("Invalid option - must be 'TOKENIZE' or 'REASSEMBLE'")
-  return output
 
 # COMMAND ----------
 
@@ -191,6 +186,7 @@ encrypted = (df
     fpe_encrypt_pandas_udf(col("phone_number")).alias("encrypted_phone_number"),
     fpe_encrypt_pandas_udf(col("iban")).alias("encrypted_iban"),
     fpe_encrypt_pandas_udf(col("credit_card").cast("string")).alias("encrypted_credit_card"),
+    fpe_encrypt_pandas_udf(col("address").cast("string")).alias("encrypted_address")
   ))
 display(encrypted)
 
@@ -213,6 +209,11 @@ decrypted = (encrypted
     fpe_decrypt_pandas_udf(col("encrypted_mac_address")).alias("decrypted_mac_address"),
     fpe_decrypt_pandas_udf(col("encrypted_phone_number")).alias("decrypted_phone_number"),
     fpe_decrypt_pandas_udf(col("encrypted_iban")).alias("decrypted_iban"),
-    fpe_decrypt_pandas_udf(col("encrypted_credit_card").cast("string")).alias("decrypted_credit_card"),
+    fpe_decrypt_pandas_udf(col("encrypted_credit_card")).cast("long").alias("decrypted_credit_card"),
+    fpe_decrypt_pandas_udf(col("encrypted_address").cast("string")).alias("decrypted_address")
   ))
 display(decrypted)
+
+# COMMAND ----------
+
+display(df.select("name", "email", "date_of_birth", "ssn", "ipv4", "ipv6", "mac_address", "phone_number", "iban", "credit_card", "address"))
