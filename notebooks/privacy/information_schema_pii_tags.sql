@@ -1,4 +1,9 @@
 -- Databricks notebook source
+-- MAGIC %md
+-- MAGIC ## Create Temp Views
+
+-- COMMAND ----------
+
 CREATE
 OR REPLACE TEMPORARY VIEW pii_tags AS (
   SELECT
@@ -101,14 +106,24 @@ OR REPLACE TEMPORARY VIEW privileges_and_tags AS (
 
 -- COMMAND ----------
 
+-- MAGIC %md
+-- MAGIC ## Which users have access to PII?
+
+-- COMMAND ----------
+
 SELECT * FROM privileges_and_tags ORDER BY securable ASC
 
 -- COMMAND ----------
 
+-- MAGIC %md
+-- MAGIC ## Most Privileged Users & Groups
+
+-- COMMAND ----------
+
 SELECT 
-grantee, 
+grantee AS group, 
 privilege_type,
-securable_type,
+securable_type AS securable_with_pii,
 count(*) AS total
 FROM privileges_and_tags
 GROUP BY 1, 2, 3
