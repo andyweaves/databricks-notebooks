@@ -1,7 +1,7 @@
 # Databricks notebook source
 import pandas as pd
 from typing import Iterator
-from pyspark.sql.functions import pandas_udf, col, spark_partition_id, asc, create_map, array
+from pyspark.sql.functions import pandas_udf, col, spark_partition_id, asc, create_map, array, lit
 from pyspark.sql.types import *
 import time
 from datetime import date
@@ -19,15 +19,28 @@ schema = StructType([
   StructField("address", StringType(), False),
   StructField("postcode", StringType(), False),
   StructField("ipv4", StringType(), False),
+  StructField("ipv4_with_port", StringType(), False),
   StructField("ipv6", StringType(), False),
   StructField("mac_address", StringType(), False),
   StructField("phone_number", StringType(), False),
   StructField("ssn", StringType(), False),
+  StructField("itin", StringType(), False),
   StructField("iban", StringType(), False),
   StructField("credit_card", LongType(), False),
+  StructField("credit_card_with_spaces", StringType(), False),
+  StructField("credit_card_full", StringType(), False),
   StructField("expiry_date", StringType(), False),
   StructField("security_code", StringType(), False),
-  StructField("freetext", StringType(), False)
+  StructField("freetext", StringType(), False),
+  StructField("passport", StringType(), False),
+  StructField("aba", StringType(), False),
+  StructField("bban", StringType(), False),
+  StructField("uri", StringType(), False),
+  StructField("url", StringType(), False),
+  StructField("language", StringType(), False),
+  StructField("nationality", StringType(), False),
+  StructField("country", StringType(), False),
+  StructField("date_time", StringType(), False),
   ])
 
 fake = Faker("en_US")
@@ -73,16 +86,29 @@ def generate_fake_data(pdf: pd.DataFrame) -> pd.DataFrame:
     y["age"] = date.today().year - dob.year
     y["address"] = fake.address()
     y["ipv4"] = fake.ipv4()
+    y["ipv4_with_port"] = generic.internet.ip_v4_with_port()
     y["ipv6"] = fake.ipv6()
     y["mac_address"] = fake.mac_address()
     y["postcode"] = fake.postcode()
     y["phone_number"] = fake.phone_number()
     y["ssn"] = fake.ssn()
+    y["itin"] = fake.itin()
     y["iban"] = fake.iban()
     y["credit_card"] = int(fake.credit_card_number())
+    y["credit_card_with_spaces"] = generic.payment.credit_card_number()
+    y["credit_card_full"] = fake.credit_card_full()
     y["expiry_date"] = fake.credit_card_expire()
     y["security_code"] = fake.credit_card_security_code()
     y["freetext"] = f"{fake.sentence()} {get_random_pii()} {fake.sentence()} {get_random_pii()} {fake.sentence()}"
+    y["passport"] = fake.passport_number()
+    y["aba"] = fake.aba()
+    y["bban"] = fake.bban()
+    y["uri"] = fake.uri()
+    y["url"] = fake.url()
+    y["language"] = generic.person.language()
+    y["nationality"] = generic.person.nationality()
+    y["country"] = fake.country()
+    y["date_time"] = fake.date_time().strftime("%c")
 
     return y
     
