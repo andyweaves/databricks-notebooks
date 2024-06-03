@@ -1,4 +1,9 @@
 # Databricks notebook source
+dbutils.widgets.text(name="secret_scope", defaultValue="", label="The secret scope to use for DEKs")
+dbutils.widgets.text(name="kek_name", defaultValue="", label="The name to use for our KEK")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ### Step 1
 # MAGIC Generate a new Key Encryption Key (KEK)
@@ -18,11 +23,14 @@ new_kek = b64encode(urandom(24)).decode('utf-8')
 
 # COMMAND ----------
 
-new_encrypted_dek = sql(f"SELECT base64(aes_encrypt(main.default.unwrap_key(secret('andrewweaver', 'dek'), 'andrewweaver-kek', (SELECT MAX(key_version) FROM sys.keyvault.keys WHERE key_name = 'andrewweaver-kek' AND key_enabled)), '{new_kek}', 'GCM', 'DEFAULT'))").first()[0]
+secret_scope = dbutils.widgets.get("secret_scope")
+kek_name = dbutils.widgets.get("kek_name")
 
-new_encrypted_iv = sql(f"SELECT base64(aes_encrypt(main.default.unwrap_key(secret('andrewweaver', 'iv'), 'andrewweaver-kek', (SELECT MAX(key_version) FROM sys.keyvault.keys WHERE key_name = 'andrewweaver-kek' AND key_enabled)), '{new_kek}', 'GCM', 'DEFAULT'))").first()[0]
+new_encrypted_dek = sql(f"SELECT base64(aes_encrypt(sys.crypto.unwrap_key(secret('{secret_scope}', 'dek'), '{kek_name}'), '{new_kek}', 'GCM', 'DEFAULT'))").first()[0]
 
-new_encrypted_aad = sql(f"SELECT base64(aes_encrypt(main.default.unwrap_key(secret('andrewweaver', 'aad'), 'andrewweaver-kek', (SELECT MAX(key_version) FROM sys.keyvault.keys WHERE key_name = 'andrewweaver-kek' AND key_enabled)), '{new_kek}', 'GCM', 'DEFAULT'))").first()[0]
+new_encrypted_iv = sql(f"SELECT base64(aes_encrypt(sys.crypto.unwrap_key(secret('{secret_scope}', 'iv'), '{kek_name}'), '{new_kek}', 'GCM', 'DEFAULT'))").first()[0]
+
+new_encrypted_aad = sql(f"SELECT base64(aes_encrypt(sys.crypto.unwrap_key(secret('{secret_scope}', 'aad'), '{kek_name}'), '{new_kek}', 'GCM', 'DEFAULT'))").first()[0]
 
 # COMMAND ----------
 
@@ -32,39 +40,49 @@ new_encrypted_aad = sql(f"SELECT base64(aes_encrypt(main.default.unwrap_key(secr
 
 # COMMAND ----------
 
-w.secrets.put_secret(scope=current_user, key='dek', string_value=new_encrypted_dek)
-w.secrets.put_secret(scope=current_user, key='iv', string_value=new_encrypted_iv)
-w.secrets.put_secret(scope=current_user, key='aad', string_value=new_encrypted_aad)
+from databricks.sdk import WorkspaceClient
 
-display(sql(f"SELECT * FROM list_secrets() WHERE scope = '{current_user}'"))
+w = WorkspaceClient()
+
+w.secrets.put_secret(scope=secret_scope, key='dek', string_value=new_encrypted_dek)
+w.secrets.put_secret(scope=secret_scope, key='iv', string_value=new_encrypted_iv)
+w.secrets.put_secret(scope=secret_scope, key='aad', string_value=new_encrypted_aad)
+
+display(sql(f"SELECT * FROM list_secrets() WHERE scope = '{secret_scope}'"))
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Step 4
-# MAGIC Update our `sys.crypto.key_vault` table with the new KEK
+# MAGIC Update our `sys.crypto.key_vault` table with the new KEK and mark the old key as no longer enabled
 
 # COMMAND ----------
 
-current_version = sql("SELECT MAX(key_version) FROM sys.crypto.key_vault WHERE key_name = 'andrewweaver-kek' AND key_enabled").first()[0]
+current_version = sql(f"SELECT MAX(key_version) AS current_version FROM sys.crypto.key_vault WHERE key_name = '{kek_name}' AND key_enabled").first()[0]
 current_version
 
 # COMMAND ----------
 
-sql(f"""INSERT INTO sys.keyvault.keys 
+sql(f"""INSERT INTO sys.crypto.key_vault
 (created_date, created_time, last_modified_time, created_by, managed_by, key_name, key_version, key_enabled, key_type, key) 
-VALUES (current_date(), current_timestamp(), current_timestamp(), session_user(), session_user(), '{current_user}-kek', {current_version+1}, True, 'KEK', '{new_kek}')""")
+VALUES (current_date(), current_timestamp(), current_timestamp(), session_user(), session_user(), '{kek_name}', {current_version+1}, True, 'KEK', '{new_kek}')""")
 
 # COMMAND ----------
 
-sql(f"""UPDATE sys.keyvault.keys SET last_modified_time = current_timestamp(), key_enabled = FALSE
-    WHERE key_name = 'andrewweaver-kek' AND key_version = {current_version}""")
+sql(f"""UPDATE sys.crypto.key_vault SET last_modified_time = current_timestamp(), key_enabled = FALSE
+    WHERE key_name = '{kek_name}' AND key_version = {current_version}""")
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM sys.keyvault.keys
+# MAGIC SELECT * FROM sys.crypto.key_vault
 # MAGIC ORDER BY id DESC
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Step 5
+# MAGIC Query the data and confirm that the data is decryped as expected
 
 # COMMAND ----------
 
