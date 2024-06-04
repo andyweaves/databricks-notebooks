@@ -54,6 +54,19 @@ display(sql(f"SELECT * FROM list_secrets() WHERE scope = '{secret_scope}'"))
 
 # MAGIC %md
 # MAGIC ### Step 4
+# MAGIC If we query the data now we should no longer be able to decrypt it (because we have rotated the DEKs without updating which KEK we're using)
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT 
+# MAGIC *
+# MAGIC FROM main.default.titanic_encrypted
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Step 5
 # MAGIC Update our `sys.crypto.key_vault` table with the new KEK and mark the old key as no longer enabled
 
 # COMMAND ----------
@@ -81,8 +94,8 @@ sql(f"""UPDATE sys.crypto.key_vault SET last_modified_time = current_timestamp()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Step 5
-# MAGIC Query the data and confirm that the data is decryped as expected
+# MAGIC ### Step 6
+# MAGIC Query the data and confirm that the data is decryped as expected now that the key rotation is complete
 
 # COMMAND ----------
 
