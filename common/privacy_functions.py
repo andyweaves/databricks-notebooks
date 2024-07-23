@@ -44,7 +44,7 @@ schema = StructType([
   ])
 
 fake = Faker("en_US")
-generic = Generic(locale=Locale.EN)
+generic = Generic(locale=Locale.EN, seed=1)
 
 def get_random_pii():
   return random.choice([fake.ascii_free_email(), fake.ipv4(), fake.ipv6()])
