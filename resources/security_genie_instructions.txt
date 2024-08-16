@@ -10,3 +10,5 @@ From a security perspective, the most relevant service_names are likely to be:
 * secrets
 * unityCatalog
 * workspace
+* syslog
+
