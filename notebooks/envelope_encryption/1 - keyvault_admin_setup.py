@@ -142,7 +142,10 @@ w.secrets.put_acl(scope=secret_scope, permission=workspace.AclPermission.READ, p
 # MAGIC %sql
 # MAGIC CREATE OR REPLACE FUNCTION sys.crypto.unwrap_key(key_to_unwrap STRING, key_to_use STRING) 
 # MAGIC RETURNS STRING
-# MAGIC RETURN aes_decrypt(unbase64(key_to_unwrap), (SELECT FIRST(key) FROM sys.crypto.key_vault WHERE key_enabled AND key_name = key_to_use), 'GCM', 'DEFAULT')
+# MAGIC RETURN pandas_udf(secrets_manager_name)
+# MAGIC
+# MAGIC
+# MAGIC -- aes_decrypt(unbase64(key_to_unwrap), (SELECT FIRST(key) FROM sys.crypto.key_vault WHERE key_enabled AND key_name = key_to_use), 'GCM', 'DEFAULT')
 
 # COMMAND ----------
 
