@@ -18,7 +18,7 @@ def generate_kek() -> dict:
 import random
 import string
 
-def generate_dek() -> dict:
+def generate_dek(with_iv_aad=False) -> dict:
     """
     Generates a data encryption key (DEK), iv and aad
     """
@@ -26,7 +26,11 @@ def generate_dek() -> dict:
     dek = b64encode(secrets.token_bytes(24)).decode('utf-8')
     iv = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
     aad = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    return {"private_key": dek, "iv": iv, "aad": aad}
+
+    key = {"private_key": dek}
+    if with_iv_aad:
+        key.update({"iv": iv, "aad": aad})
+    return key
 
 # COMMAND ----------
 
