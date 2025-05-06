@@ -1,132 +1,105 @@
 -- Databricks notebook source
 -- MAGIC %python
--- MAGIC dbutils.widgets.text(name="secret_scope", defaultValue="", label="The secret scope to use for DEKs")
+-- MAGIC dbutils.widgets.text("schema", defaultValue="encrypted")
+-- MAGIC dbutils.widgets.text("catalog", defaultValue="production")
 
 -- COMMAND ----------
 
 -- MAGIC %md
 -- MAGIC ### Step 1
--- MAGIC Check that the user is member of the `keyvault_user` group
+-- MAGIC * Check whether the user is member of the relevant account level group
 
 -- COMMAND ----------
 
-SELECT is_account_group_member('keyvault_user') AS is_keyvault_user
+SELECT is_account_group_member(concat(:catalog, '_', :schema, '_decrypt')) AS is_allowed_to_decrypt
 
 -- COMMAND ----------
 
 -- MAGIC %md
 -- MAGIC ### Step 2
--- MAGIC Check that the user cannot access the raw data
+-- MAGIC * Check that the user cannot access the raw data
 
 -- COMMAND ----------
 
-SELECT * FROM main.default.titanic_raw
+SELECT * 
+FROM read_files(
+  concat('/Volumes/', :catalog, '/', :schema, '/raw_files/titanic.csv'),
+  format => 'csv',
+  header => true,
+  mode => 'FAILFAST');
 
 -- COMMAND ----------
 
 -- MAGIC %md
 -- MAGIC ### Step 3
--- MAGIC Check that the user cannot access the `sys.crypto.key_vault` catalog/schema/table 
+-- MAGIC * Check that the user cannot view or access the `crypto` schema
 
 -- COMMAND ----------
 
-SHOW SCHEMAS IN sys
+USE CATALOG IDENTIFIER(:catalog);
+SHOW SCHEMAS
 
 -- COMMAND ----------
 
-SHOW TABLES IN sys.crypto
+SHOW TABLES IN IDENTIFIER(concat(:catalog, '.crypto'))
 
 -- COMMAND ----------
 
-SELECT * FROM sys.crypto.key_vault
+SHOW FUNCTIONS IN IDENTIFIER(concat(:catalog, '.crypto'))
 
 -- COMMAND ----------
 
 -- MAGIC %md
 -- MAGIC ### Step 4
--- MAGIC Check that the user cannot access any of the crypto functions
+-- MAGIC * Check that the user cannot access any of the crypto functions
 
 -- COMMAND ----------
 
-SHOW FUNCTIONS IN sys.crypto
+DESCRIBE FUNCTION EXTENDED IDENTIFIER(concat(:catalog, '.crypto.unwrap_key'));
 
 -- COMMAND ----------
 
-SELECT sys.crypto.unwrap_key('key_to_unwrap', 'kek', 1) 
+SELECT * FROM (SELECT crypto.unwrap_key(concat('unity_catalog/', (element_at(split(current_metastore(), ':'), -1)), '/', :catalog), :schema))
 
 -- COMMAND ----------
 
-DESCRIBE FUNCTION sys.crypto.unwrap_key
+DESCRIBE FUNCTION EXTENDED IDENTIFIER(concat(:catalog, '.crypto.encrypt'));
 
 -- COMMAND ----------
 
-SELECT sys.crypto.encrypt('text to encrypt') 
+DESCRIBE FUNCTION EXTENDED IDENTIFIER(concat(:catalog, '.crypto.decrypt'));
 
 -- COMMAND ----------
 
-DESCRIBE FUNCTION sys.crypto.encrypt
+-- MAGIC %md
+-- MAGIC ### Step 4
+-- MAGIC * Check whether the user can access the data
 
 -- COMMAND ----------
 
-SELECT sys.crypto.decrypt('text to decrypt')
+SELECT *
+FROM IDENTIFIER(:catalog || '.' || :schema || '.titanic');
 
 -- COMMAND ----------
 
-DESCRIBE FUNCTION sys.crypto.decrypt
+DESCRIBE TABLE EXTENDED IDENTIFIER(:catalog || '.' || :schema || '.titanic');
 
 -- COMMAND ----------
 
 -- MAGIC %md
 -- MAGIC ### Step 5
--- MAGIC Check that the user can access the DEK and related secrets, but they `[REDACTED]` by default and encrypted when enumerated
+-- MAGIC * Now add the user to the the decrypt group, wait ~5 minutes for the groups to sync fully and then run the following command to check whether the user can decrypt the data. 
+-- MAGIC * Optionally repeat the steps above to ensure that they still cannot access the crypto schema or functions 
 
 -- COMMAND ----------
 
-SELECT * FROM list_secrets() WHERE scope = :secret_scope
+SELECT concat(:catalog, '_', :schema, '_decrypt') AS group_to_add_user_to
 
 -- COMMAND ----------
 
-SELECT SECRET(:secret_scope, 'dek') AS dek;
+SELECT is_account_group_member(concat(:catalog, '_', :schema, '_decrypt')) AS is_allowed_to_decrypt;
 
 -- COMMAND ----------
 
--- MAGIC %python 
--- MAGIC # This will show either [REDACTED] or the encrypted DEK
--- MAGIC dek = dbutils.secrets.get(dbutils.widgets.get("secret_scope"), "dek")
--- MAGIC for c in dek:
--- MAGIC     print(dek)
-
--- COMMAND ----------
-
--- MAGIC %md
--- MAGIC ### Step 6
--- MAGIC Check that the user can access the data
-
--- COMMAND ----------
-
-SELECT * FROM main.default.titanic_encrypted
-
--- COMMAND ----------
-
-DESCRIBE TABLE EXTENDED main.default.titanic_encrypted
-
--- COMMAND ----------
-
--- MAGIC %md
--- MAGIC ### Step 7
--- MAGIC Remove membership of the `keyvault_user` group & check they can no longer access the decrypted data...
-
--- COMMAND ----------
-
--- Remove group membership, wait ~5 minutes and then check that it's been removed
-CLEAR CACHE;
-SELECT is_account_group_member('keyvault_user') AS is_keyvault_user;
-
--- COMMAND ----------
-
-SELECT 
-PassengerId,
-Name,
-Sex,
-Age
-FROM main.default.titanic_encrypted
+SELECT *
+FROM IDENTIFIER(:catalog || '.' || :schema || '.titanic');
