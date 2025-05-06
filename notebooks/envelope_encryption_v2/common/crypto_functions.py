@@ -95,3 +95,19 @@ def create_aws_secret(session: Session, secret_name: str, secret_description: st
         raise e
 
     return response
+
+# COMMAND ----------
+
+def put_aws_secret(session: Session, secret_arn: str, secret_string: str):
+
+    client = session.client('secretsmanager')
+    try:
+        response = client.put_secret_value(
+            SecretId=secret_arn,
+            SecretString='string')
+        
+        #Todo - Test this function works/additional params aren't needed... https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/secretsmanager/client/put_secret_value.html
+    except ClientError as e:
+        raise e
+
+    return response
