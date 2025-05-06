@@ -98,6 +98,19 @@ def create_aws_secret(session: Session, secret_name: str, secret_description: st
 
 # COMMAND ----------
 
+def get_aws_secret(session: Session, secret_arn: str):
+
+    client = session.client('secretsmanager')
+    try:
+        response = client.get_secret_value(
+            SecretId=secret_arn)
+    except ClientError as e:
+        raise e
+
+    return json.loads(response.get("SecretString"))
+
+# COMMAND ----------
+
 def put_aws_secret(session: Session, secret_arn: str, secret_string: str):
 
     client = session.client('secretsmanager')

@@ -41,10 +41,6 @@ SHOW SCHEMAS
 
 -- COMMAND ----------
 
-SHOW TABLES IN IDENTIFIER(concat(:catalog, '.crypto'))
-
--- COMMAND ----------
-
 SHOW FUNCTIONS IN IDENTIFIER(concat(:catalog, '.crypto'))
 
 -- COMMAND ----------
@@ -67,7 +63,15 @@ DESCRIBE FUNCTION EXTENDED IDENTIFIER(concat(:catalog, '.crypto.encrypt'));
 
 -- COMMAND ----------
 
+SELECT crypto.encrypt("This is a string to encrypt", :schema) AS test 
+
+-- COMMAND ----------
+
 DESCRIBE FUNCTION EXTENDED IDENTIFIER(concat(:catalog, '.crypto.decrypt'));
+
+-- COMMAND ----------
+
+SELECT crypto.decrypt("R2RjeyuOoOsm4618FQA2lzXV1NHQ9plx5PSp+2X5k+COsX1aO9IOAt03uw0gKJ5bv3pNd9hNmA==", :schema) AS test 
 
 -- COMMAND ----------
 
