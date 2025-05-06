@@ -2,6 +2,8 @@
 -- MAGIC %python
 -- MAGIC dbutils.widgets.text("schema", defaultValue="encrypted")
 -- MAGIC dbutils.widgets.text("catalog", defaultValue="production")
+-- MAGIC dbutils.widgets.text("region", defaultValue="eu-west-1")
+-- MAGIC dbutils.widgets.text("uc_service_credential", defaultValue="")
 
 -- COMMAND ----------
 
@@ -47,6 +49,20 @@ SHOW FUNCTIONS IN IDENTIFIER(concat(:catalog, '.crypto'))
 
 -- MAGIC %md
 -- MAGIC ### Step 4
+-- MAGIC * Check that the user cannot access the UC service credential
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC import boto3
+-- MAGIC
+-- MAGIC boto3_session = boto3.Session(botocore_session=dbutils.credentials.getServiceCredentialsProvider(dbutils.widgets.get("uc_service_credential")), region_name=dbutils.widgets.get("region"))
+-- MAGIC boto3_session
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ### Step 5
 -- MAGIC * Check that the user cannot access any of the crypto functions
 
 -- COMMAND ----------
@@ -76,7 +92,7 @@ SELECT crypto.decrypt("R2RjeyuOoOsm4618FQA2lzXV1NHQ9plx5PSp+2X5k+COsX1aO9IOAt03u
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ### Step 4
+-- MAGIC ### Step 6
 -- MAGIC * Check whether the user can access the data
 
 -- COMMAND ----------
@@ -91,7 +107,7 @@ DESCRIBE TABLE EXTENDED IDENTIFIER(:catalog || '.' || :schema || '.titanic');
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ### Step 5
+-- MAGIC ### Step 7
 -- MAGIC * Now add the user to the the decrypt group, wait ~5 minutes for the groups to sync fully and then run the following command to check whether the user can decrypt the data. 
 -- MAGIC * Optionally repeat the steps above to ensure that they still cannot access the crypto schema or functions 
 
