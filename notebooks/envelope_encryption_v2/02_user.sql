@@ -7,6 +7,10 @@
 
 -- COMMAND ----------
 
+SELECT session_user() AS current_user
+
+-- COMMAND ----------
+
 -- MAGIC %md
 -- MAGIC ### Step 1
 -- MAGIC * Check whether the user is member of the relevant account level group
@@ -57,7 +61,7 @@ SHOW FUNCTIONS IN IDENTIFIER(concat(:catalog, '.crypto'))
 -- MAGIC import boto3
 -- MAGIC
 -- MAGIC boto3_session = boto3.Session(botocore_session=dbutils.credentials.getServiceCredentialsProvider(dbutils.widgets.get("uc_service_credential")), region_name=dbutils.widgets.get("region"))
--- MAGIC boto3_session
+-- MAGIC sm = boto3_session.client('secretsmanager')
 
 -- COMMAND ----------
 
