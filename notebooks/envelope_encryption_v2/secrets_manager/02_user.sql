@@ -1,6 +1,6 @@
 -- Databricks notebook source
 -- MAGIC %python
--- MAGIC dbutils.widgets.text("schema", defaultValue="encrypted")
+-- MAGIC dbutils.widgets.text("schema", defaultValue="maritime_history")
 -- MAGIC dbutils.widgets.text("catalog", defaultValue="production")
 -- MAGIC dbutils.widgets.text("region", defaultValue="eu-west-1")
 -- MAGIC dbutils.widgets.text("uc_service_credential", defaultValue="")
