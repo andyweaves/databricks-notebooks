@@ -1,9 +1,9 @@
 -- Databricks notebook source
 -- MAGIC %python
--- MAGIC dbutils.widgets.text("schema", defaultValue="maritime_history")
+-- MAGIC dbutils.widgets.text("schema", defaultValue="customers")
 -- MAGIC dbutils.widgets.text("catalog", defaultValue="production")
 -- MAGIC dbutils.widgets.text("region", defaultValue="eu-west-1")
--- MAGIC dbutils.widgets.text("uc_service_credential", defaultValue="")
+-- MAGIC dbutils.widgets.text("uc_service_credential", defaultValue="production-aws-secrets-manager")
 
 -- COMMAND ----------
 
@@ -43,7 +43,10 @@ FROM read_files(
 -- COMMAND ----------
 
 USE CATALOG IDENTIFIER(:catalog);
-SHOW SCHEMAS
+
+-- COMMAND ----------
+
+SHOW SCHEMAS;
 
 -- COMMAND ----------
 
