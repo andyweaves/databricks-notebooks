@@ -144,6 +144,7 @@ def create_kms_key(session: Session, alias: str, description: str, tags: list):
             TargetKeyId=cmk.get("KeyMetadata").get("KeyId"))
         
     except ClientError as e:
+        print(e)
         return e
     
     return cmk
