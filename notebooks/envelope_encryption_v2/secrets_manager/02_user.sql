@@ -1,6 +1,6 @@
 -- Databricks notebook source
 -- MAGIC %python
--- MAGIC dbutils.widgets.text("schema", defaultValue="marketing")
+-- MAGIC dbutils.widgets.text("schema", defaultValue="human_resources")
 -- MAGIC dbutils.widgets.text("catalog", defaultValue="production")
 -- MAGIC dbutils.widgets.text("region", defaultValue="eu-west-1")
 -- MAGIC dbutils.widgets.text("uc_service_credential", defaultValue="production-aws-secrets-manager")
@@ -17,7 +17,7 @@ SELECT session_user() AS current_user
 
 -- COMMAND ----------
 
-SELECT is_account_group_member(concat(:catalog, '_', :schema, '_decrypt')) AS is_allowed_to_decrypt
+SELECT is_account_group_member(concat(:catalog, '.', :schema, '.crypto.user')) AS is_allowed_to_decrypt
 
 -- COMMAND ----------
 
@@ -120,11 +120,11 @@ DESCRIBE TABLE EXTENDED IDENTIFIER(:catalog || '.' || :schema || '.titanic');
 
 -- COMMAND ----------
 
-SELECT concat(:catalog, '_', :schema, '_decrypt') AS group_to_add_user_to
+SELECT concat(:catalog, '.', :schema, '.crypto.user') AS group_to_add_user_to
 
 -- COMMAND ----------
 
-SELECT is_account_group_member(concat(:catalog, '_', :schema, '_decrypt')) AS is_allowed_to_decrypt;
+SELECT is_account_group_member(concat(:catalog, '.', :schema, '.crypto.user')) AS is_allowed_to_decrypt;
 
 -- COMMAND ----------
 
