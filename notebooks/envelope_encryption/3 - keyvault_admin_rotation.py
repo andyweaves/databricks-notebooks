@@ -26,11 +26,7 @@ new_kek = b64encode(urandom(24)).decode('utf-8')
 secret_scope = dbutils.widgets.get("secret_scope")
 kek_name = dbutils.widgets.get("kek_name")
 
-new_encrypted_dek = sql(f"SELECT base64(aes_encrypt(sys.crypto.unwrap_key(secret('{secret_scope}', 'dek'), '{kek_name}'), '{new_kek}', 'GCM', 'DEFAULT'))").first()[0]
-
-new_encrypted_iv = sql(f"SELECT base64(aes_encrypt(sys.crypto.unwrap_key(secret('{secret_scope}', 'iv'), '{kek_name}'), '{new_kek}', 'GCM', 'DEFAULT'))").first()[0]
-
-new_encrypted_aad = sql(f"SELECT base64(aes_encrypt(sys.crypto.unwrap_key(secret('{secret_scope}', 'aad'), '{kek_name}'), '{new_kek}', 'GCM', 'DEFAULT'))").first()[0]
+new_encrypted_dek = sql(f"SELECT base64(aes_encrypt(main.crypto.unwrap_key(secret('{secret_scope}', 'dek'), '{kek_name}'), '{new_kek}', 'GCM', 'DEFAULT'))").first()[0]
 
 # COMMAND ----------
 
@@ -45,8 +41,6 @@ from databricks.sdk import WorkspaceClient
 w = WorkspaceClient()
 
 w.secrets.put_secret(scope=secret_scope, key='dek', string_value=new_encrypted_dek)
-w.secrets.put_secret(scope=secret_scope, key='iv', string_value=new_encrypted_iv)
-w.secrets.put_secret(scope=secret_scope, key='aad', string_value=new_encrypted_aad)
 
 display(sql(f"SELECT * FROM list_secrets() WHERE scope = '{secret_scope}'"))
 
