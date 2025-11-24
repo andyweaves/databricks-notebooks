@@ -45,7 +45,7 @@ kek = b64encode(urandom(24)).decode('utf-8')
 
 # MAGIC %sql
 # MAGIC --Create a keyvault catalog & schema
-# MAGIC CREATE CATALOG IF NOT EXISTS sys;
+# MAGIC --CREATE CATALOG IF NOT EXISTS sys;
 # MAGIC CREATE SCHEMA IF NOT EXISTS sys.crypto;
 # MAGIC
 # MAGIC -- Create a row filter to additionally protect keys
@@ -99,12 +99,7 @@ import string
 import random
 
 dek = b64encode(urandom(24)).decode('utf-8')
-iv = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
-aad = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-
 encrypted_dek = sql(f"SELECT base64(aes_encrypt('{dek}', '{kek}', 'GCM', 'DEFAULT'))").first()[0]
-encrypted_iv = sql(f"SELECT base64(aes_encrypt('{iv}', '{kek}', 'GCM', 'DEFAULT'))").first()[0]
-encrypted_aad = sql(f"SELECT base64(aes_encrypt('{aad}', '{kek}', 'GCM', 'DEFAULT'))").first()[0]
 
 # COMMAND ----------
 
@@ -120,8 +115,6 @@ except Exception as e:
     print(e)
 
 w.secrets.put_secret(scope=secret_scope, key='dek', string_value=encrypted_dek)
-w.secrets.put_secret(scope=secret_scope, key='iv', string_value=encrypted_iv)
-w.secrets.put_secret(scope=secret_scope, key='aad', string_value=encrypted_aad)
 
 display(sql(f"SELECT * FROM list_secrets() WHERE scope = '{secret_scope}'"))
 
@@ -154,9 +147,7 @@ RETURN
     base64(aes_encrypt(col, 
     sys.crypto.unwrap_key(secret('{secret_scope}', 'dek'), '{kek_name}'),
     'GCM',  
-    'DEFAULT',
-    sys.crypto.unwrap_key(secret('{secret_scope}', 'iv'), '{kek_name}'),
-    sys.crypto.unwrap_key(secret('{secret_scope}', 'aad'), '{kek_name}')
+    'DEFAULT'
     ))""")
 
 # COMMAND ----------
@@ -212,8 +203,7 @@ RETURN
     nvl(CAST(try_aes_decrypt(unbase64(col), 
     sys.crypto.unwrap_key(secret('{secret_scope}', 'dek'), '{kek_name}'),
     'GCM',  
-    'DEFAULT',
-    sys.crypto.unwrap_key(secret('{secret_scope}', 'aad'), '{kek_name}')) AS STRING), 
+    'DEFAULT') AS STRING), 
     col)
     ELSE col END;""")
 
