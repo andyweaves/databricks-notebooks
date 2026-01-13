@@ -1,0 +1,38 @@
+{
+  "evaluation": {
+    "source": {
+      "name": "event_time",
+      "display": "source",
+      "aggregation": "COUNT"
+    },
+    "comparison_operator": "GREATER_THAN",
+    "threshold": {
+      "value": {
+        "double_value": 0.0
+      }
+    },
+    "empty_result_state": "OK",
+    "notification": {
+      "notify_on_ok": true
+    }
+  },
+  "schedule": {
+    "quartz_cron_schedule": "58 0 7 * * ?",
+    "timezone_id": "Europe/London"
+  },
+  "query_lines": [
+    "-- Alert to check whether any serverless outbound network events have been denied within the last 24 hours ",
+    "SELECT",
+    "event_time,",
+    "workspace_id,",
+    "network_source_type,",
+    "destination_type,",
+    "destination,",
+    "access_type AS event_type,",
+    "struct(dns_event, storage_event) AS network_event",
+    "FROM system.access.outbound_network",
+    "WHERE event_time >= current_date() - INTERVAL 24 HOURS",
+    "AND access_type = 'DROP'",
+    "ORDER BY event_time DESC"
+  ]
+}
