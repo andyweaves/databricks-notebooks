@@ -13,11 +13,12 @@
     },
     "empty_result_state": "OK",
     "notification": {
+      "retrigger_seconds": 1,
       "notify_on_ok": true
     }
   },
   "schedule": {
-    "quartz_cron_schedule": "58 0 7 * * ?",
+    "quartz_cron_schedule": "58 0 7,15 * * ?",
     "timezone_id": "Europe/London"
   },
   "query_lines": [
@@ -32,7 +33,20 @@
     "struct(dns_event, storage_event) AS network_event",
     "FROM system.access.outbound_network",
     "WHERE event_time >= current_date() - INTERVAL 24 HOURS",
-    "AND access_type = 'DROP'",
+    "AND access_type IN ('DROP', 'DRY_RUN_DENIAL')",
     "ORDER BY event_time DESC"
+  ],
+  "custom_description_lines": [
+    "<h3>Unauthorised outbound network access detected!</h3>",
+    "",
+    "Alert \"{{ALERT_NAME}}\" changed status to {{ALERT_STATUS}}",
+    "",
+    "<code>",
+    "<h4>Total number of events detected:</h4>",
+    "</code>",
+    "",
+    "{{QUERY_RESULT_TABLE}}",
+    "<br>",
+    "Please refer to <a href=\"{{ALERT_URL}}\">the alert</a> for more information!"
   ]
 }
