@@ -115,11 +115,11 @@ class LlamaPromptGuardModel(mlflow.pyfunc.PythonModel):
         if response["flagged"]:
             label = response["label"]
             if label == "JAILBREAK":
-                reject_message = f"Your request has been flagged by our AI guardrails as a potential jailbreak attempt: {response}" 
+                reject_message = f"🚫🚫🚫 Your request has been flagged by AI guardrails as a potential jailbreak attempt: {response} 🚫🚫🚫" 
             elif label == "PROMPT_INJECTION":
-                reject_message = f"Your request has been flagged by our AI guardrails as a potential prompt injection attempt: {response}" 
+                reject_message = f"🚫🚫🚫 Your request has been flagged by AI guardrails as a potential prompt injection attempt: {response} 🚫🚫🚫" 
             else:
-                reject_message = f"Your request has been flagged by our AI guardrails: {response}" 
+                reject_message = f"🚫🚫🚫 Your request has been flagged by our AI guardrails: {response} 🚫🚫🚫" 
             
             return {
                 "decision": "reject",
