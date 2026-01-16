@@ -6,6 +6,7 @@ To define a custom guardrail pyfunc, the following must be implemented:
 3. def _translate_guardrail_response(self, response, sanitized_input) -> Translates our custom guardrails response to the OpenAI Chat Completions (ChatV1) format.
 4. def predict(self, context, model_input, params) -> Applies the guardrail to the model input/output and returns the guardrail response.
 """
+
 from typing import Any, Dict, List, Union
 import json
 import copy
@@ -64,7 +65,7 @@ class CodeShieldGuardrail(mlflow.pyfunc.PythonModel):
       if (request["mode"]["phase"] != "output") or (request["mode"]["stream_mode"] is None) or (request["mode"]["stream_mode"] == "streaming"):
         raise Exception(f"Invalid mode: {request}.")
       if ("choices" not in request):
-        raise Exception(f"Missing key \\"choices\\" in request: {request}.")
+        raise Exception(f"Missing key \"choices\" in request: {request}.")
       
       choices = request["choices"]
       code_content = ""
@@ -72,9 +73,9 @@ class CodeShieldGuardrail(mlflow.pyfunc.PythonModel):
       for choice in choices:
         # Performing validation
         if ("message" not in choice):
-          raise Exception(f"Missing key \\"message\\" in \\"choices\\": {request}.")
+          raise Exception(f"Missing key \"message\" in \"choices\": {request}.")
         if ("content" not in choice["message"]):
-          raise Exception(f"Missing key \\"content\\" in \\"choices[\\"message\\"]\\": {request}.")
+          raise Exception(f"Missing key \"content\" in \"choices[\"message\"]\": {request}.")
 
         # Extract code content from the message
         code_content += choice["message"]["content"]
@@ -85,25 +86,38 @@ class CodeShieldGuardrail(mlflow.pyfunc.PythonModel):
       """
       Translates Code Shield scan results to the Databricks Guardrails format.
       """
+      # Convert scan_result to a JSON-serializable dictionary
+      # Extract the string value from the enum
+      treatment_value = scan_result.recommended_treatment
+      if hasattr(treatment_value, 'value'):
+        treatment_str = treatment_value.value
+      else:
+        treatment_str = str(treatment_value)
+      
+      scan_result_dict = {
+        "is_insecure": bool(scan_result.is_insecure),
+        "recommended_treatment": treatment_str
+      }
+      
       if scan_result.is_insecure:
-        if scan_result.recommended_treatment == "block":
+        if treatment_str == "block":
           # Block the response entirely
           return {
             "decision": "reject",
             "reject_reason": f"🚫🚫🚫 The generated code has been flagged as insecure by AI guardrails. 🚫🚫🚫",
-            "guardrail_response": {"include_in_response": True, "response": scan_result}
+            "guardrail_response": {"include_in_response": True, "response": scan_result_dict}
           }
-        elif scan_result.recommended_treatment == "warn":
+        elif treatment_str == "warn":
           # Add warning to the content
           warning_message = "⚠️⚠️⚠️ WARNING: The generated code has been flagged as having potential security issues by AI guardrails. Please review carefully before use. ⚠️⚠️⚠️"
           return {
             "decision": "sanitize",
-            "guardrail_response": {"include_in_response": True, "response": scan_result}
+            "guardrail_response": {"include_in_response": True, "response": warning_message, "scan_result": scan_result_dict},
             "sanitized_input": {
               "choices": [{
                 "message": {
                   "role": "assistant",
-                  "content": warning_message + "\n" + original_content
+                  "content": original_content
                 }
               }]
             }
@@ -112,7 +126,7 @@ class CodeShieldGuardrail(mlflow.pyfunc.PythonModel):
       # No security issues found
       return {
         "decision": "proceed",
-        "guardrail_response": {"include_in_response": True, "response": scan_result}
+        "guardrail_response": {"include_in_response": True, "response": scan_result_dict}
       }
 
     def predict(self, context, model_input, params):
