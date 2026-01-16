@@ -104,15 +104,17 @@ class CodeShieldGuardrail(mlflow.pyfunc.PythonModel):
           # Block the response entirely
           return {
             "decision": "reject",
-            "reject_reason": f"🚫🚫🚫 The generated code has been flagged as insecure by AI guardrails. 🚫🚫🚫",
-            "guardrail_response": {"include_in_response": True, "response": scan_result_dict}
+            "reject_message": f"""🚫🚫🚫 The generated code has been flagged as insecure by AI guardrails. 🚫🚫🚫
+            Scan result: 
+            {scan_result.__dict__}
+            """
           }
         elif treatment_str == "warn":
           # Add warning to the content
           warning_message = "⚠️⚠️⚠️ WARNING: The generated code has been flagged as having potential security issues by AI guardrails. Please review carefully before use. ⚠️⚠️⚠️"
           return {
             "decision": "sanitize",
-            "guardrail_response": {"include_in_response": True, "response": warning_message, "scan_result": scan_result_dict},
+            "guardrail_response": {"include_in_response": True, "response": warning_message, "scan_result": scan_result.__dict__},
             "sanitized_input": {
               "choices": [{
                 "message": {
@@ -126,7 +128,7 @@ class CodeShieldGuardrail(mlflow.pyfunc.PythonModel):
       # No security issues found
       return {
         "decision": "proceed",
-        "guardrail_response": {"include_in_response": True, "response": scan_result_dict}
+        "guardrail_response": {"include_in_response": True, "response": scan_result.__dict__}
       }
 
     def predict(self, context, model_input, params):
