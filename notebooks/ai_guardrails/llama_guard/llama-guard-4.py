@@ -60,7 +60,7 @@ class LlamaGuard4Model(mlflow.pyfunc.PythonModel):
 
     def parse_category(self, reason: str) -> str:
         """
-        Parse the safety category code (e.g., 'S1', 'S10') into human-readable text.
+        Parse the safety category code (e.g., 'S1', 'S2') into human-readable text.
         
         Args:
             reason: Category code like 'S1', 'S2', etc.
@@ -135,8 +135,8 @@ class LlamaGuard4Model(mlflow.pyfunc.PythonModel):
             outputs[:, inputs["input_ids"].shape[-1]:]
         )[0].strip()
         
-        # Remove special tokens
-        result = result.replace("<|eot_id|>", "").strip()
+        # Remove special tokens - handle both <|eot_id|> and <|eot|>
+        result = result.replace("<|eot_id|>", "").replace("<|eot|>", "").strip()
         
         # Parse the result
         # Format: "safe" or "unsafe\nS1, S2" (categories comma-separated or on new lines)
@@ -156,7 +156,9 @@ class LlamaGuard4Model(mlflow.pyfunc.PythonModel):
                 for part in parts:
                     if part and part.startswith("S"):
                         # Extract just the category code (e.g., "S1" from "S1.")
+                        # Also remove any remaining special tokens
                         cat_code = part.split(".")[0].strip()
+                        cat_code = cat_code.replace("<|eot_id|>", "").replace("<|eot|>", "").strip()
                         if cat_code not in categories:
                             categories.append(cat_code)
                             category_names.append(self.parse_category(cat_code))
