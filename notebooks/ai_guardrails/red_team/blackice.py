@@ -44,6 +44,16 @@ target_model = dbutils.widgets.get("target_model")
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC #### ⚠️⚠️ **Important!** ⚠️⚠️
+# MAGIC >
+# MAGIC > `skip_codes = [400]`: 
+# MAGIC > - If we have Guardrails configured, they will return a `400 BAD REQUEST` error when they fail
+# MAGIC > - `garak` will see this as a connection failure and stop running, so we need to tell it to skip these responses
+# MAGIC > - We'll still be able to see the overall results of our testing via the inference table logs
+
+# COMMAND ----------
+
 from utils.garak import create_config, check_or_set_env_var
 import os
 import subprocess
@@ -62,22 +72,36 @@ subprocess.run(["garak", "--model_type", "rest", "-G", f"garak/{target_model}.js
 
 # MAGIC %md
 # MAGIC ### Review the Garak report
+# MAGIC
+# MAGIC >#### ⚠️⚠️ **Important** ⚠️⚠️
+# MAGIC > - As mentioned above, having guardrails configured will return a `400 BAD REQUEST` error which we need to tell `garak` to skip
+# MAGIC > - This will skew our results, so we'll mainly look at the `hitlog` (essentially attacks that successfully bypassed our guardrails)
+# MAGIC > - As mentioned above, we'll still be able to see the overall results of our testing via the inference table logs
 
 # COMMAND ----------
 
-from utils.garak import convert_jsonl, evaluate_jsonl
+from pyspark.sql.functions import col
 
-
-
-# COMMAND ----------
-
-df = (spark.read.json(f"file:///{output_dir}/garak/garak_runs/{target_model}.hitlog.jsonl"))
-display(df)
+hitlog = (
+  spark.read.json(f"file:///{output_dir}/garak/garak_runs/{target_model}.hitlog.jsonl")
+    .select(
+      "probe",
+      "detector",
+      "goal",
+      col("prompt.turns").alias("prompt"),
+      col("output.text").alias("response"),
+    )
+  )
+display(hitlog)
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Query the inference table
+# MAGIC
+# MAGIC >#### ⚠️⚠️ **Important** ⚠️⚠️
+# MAGIC > - As mentioned above, we can see the real impact of our guardrails via our inference table logs
+# MAGIC > - These will show which attempts are getting successfully blocked by our guardrails
 
 # COMMAND ----------
 
