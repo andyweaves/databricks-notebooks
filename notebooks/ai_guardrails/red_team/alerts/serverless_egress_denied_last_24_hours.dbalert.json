@@ -1,4 +1,5 @@
 {
+  "custom_summary": "Serverless Egress Control Alert",
   "evaluation": {
     "source": {
       "name": "network_events",
@@ -22,7 +23,7 @@
     "timezone_id": "Europe/London"
   },
   "query_lines": [
-    "-- Alert to check whether any serverless outbound network events have been denied within the last 24 hours ",
+    "-- Alert to check whether any serverless outbound network events have been denied (or dry run denied) within the last 24 hours ",
     "WITH network_events AS (SELECT",
     "to_date(event_time) AS event_date,",
     "workspace_id,",
@@ -32,10 +33,11 @@
     "destination,",
     "count(*) AS num_events",
     "FROM system.access.outbound_network",
-    "WHERE event_time >= current_timestamp() - INTERVAL 24 HOURS",
+    "WHERE event_time >= current_timestamp() - INTERVAL 12 MONTHS",
     "AND access_type IN ('DROP', 'DRY_RUN_DENIAL')",
     "GROUP BY ALL",
-    "ORDER BY event_date DESC),",
+    "ORDER BY event_date DESC",
+    "LIMIT 100),",
     "rows as (",
     "  SELECT array_agg(",
     "    '<tr><td>' || event_date || '</td><td>' || workspace_id || '</td><td>' || network_source_type || '</td><td>' || event_type || '</td><td>' || destination_type || '</td><td>' || destination || '</td><td>' || num_events || '</td></tr>') as rows_html",
@@ -47,14 +49,14 @@
     "WHERE array_size(rows_html) > 0"
   ],
   "custom_description_lines": [
-    "<h3>⚠️⚠️ Unauthorised outbound network access detected! ⚠️⚠️</h3>",
+    "<h4>Unauthorised outbound network connections detected!</h4>",
     "",
-    "Alert \"{{ALERT_NAME}}\" changed status to {{ALERT_STATUS}}",
-    "",
+    "⚠️⚠️ Alert \"{{ALERT_NAME}}\" changed status to {{ALERT_STATUS}} ⚠️⚠️",
+    "<p></p>",
     "<h4>Network Events:</h4>",
-    "",
-    "{{QUERY_RESULT_TABLE}}",
-    "<br>",
+    "<p></p>",
+    "{{QUERY_RESULT_VALUE}}",
+    "<p></p>",
     "Please refer to <a href=\"{{ALERT_URL}}\">the alert</a> for more information!"
   ]
 }

@@ -1,0 +1,63 @@
+{
+  "custom_summary": "AI Guardrails Alert",
+  "evaluation": {
+    "source": {
+      "name": "guardrail_events",
+      "display": "guardrail_events",
+      "aggregation": "AGGREGATION_UNSPECIFIED"
+    },
+    "comparison_operator": "IS_NOT_NULL",
+    "threshold": {
+      "value": {
+        "string_value": ""
+      }
+    },
+    "notification": {
+      "retrigger_seconds": 1,
+      "notify_on_ok": true
+    }
+  },
+  "schedule": {
+    "quartz_cron_schedule": "58 0 7,15 * * ?",
+    "timezone_id": "Europe/London"
+  },
+  "query_lines": [
+    "-- Alert to check whether any AI guardrails have been triggered within the last 24 hours ",
+    "-- Please add the <catalog>.<schema>.table for your model inference table below",
+    "WITH guardrail_events AS (SELECT",
+    "request_date,",
+    "COALESCE(",
+    "  NULLIF(REGEXP_EXTRACT(response:message, \"'label':\\\\s*'([^']+)'\", 1), ''),",
+    "  NULLIF(REGEXP_EXTRACT(response:message, \"Detected categories:\\\\s*(.+)\", 1), ''),",
+    "  NULLIF(try_parse_json(parse_json(response):message::string):finishReason::string, '')",
+    ") AS guardrail_triggered,",
+    "COUNT(*) AS num_events",
+    "FROM ",
+    "--`<catalog>`.`<schema>`.`table` ",
+    "WHERE status_code <> 200",
+    "AND request_date >= CURRENT_DATE() - INTERVAL 14 DAYS",
+    "GROUP BY request_date, guardrail_triggered",
+    "ORDER BY request_date DESC), ",
+    "rows as (",
+    "  SELECT array_agg(",
+    "    '<tr><td>' || request_date || '</td><td>' || guardrail_triggered || '</td><td>' || num_events || '</td></tr>') as rows_html",
+    "  FROM guardrail_events ",
+    "  WHERE guardrail_triggered IS NOT NULL ",
+    ")",
+    "",
+    "SELECT '<table><tbody><tr><th style=\"width: 80px\">Request Date</th><th style=\"width: 80px\">Guardrail Triggered</th><th style=\"width: 80px\">Number of Events</th></tr></tbody>\\n<tbody>' || array_join(rows_html, '\\n') || '</tbody></table>' as guardrail_events",
+    "FROM rows",
+    "WHERE array_size(rows_html) > 0"
+  ],
+  "custom_description_lines": [
+    "<h4>AI Guardrails have been triggered!</h4>",
+    "<p></p>",
+    "⚠️⚠️ Alert {{ALERT_NAME}} changed status to {{ALERT_STATUS}} ⚠️⚠️",
+    "<p></p>",
+    "<h4>Guardrail Events:</h4>",
+    "<p></p>",
+    "{{QUERY_RESULT_TABLE}}",
+    "<p></p>",
+    "Please refer to <a href={{ALERT_URL}}>the alert</a> for more information!"
+  ]
+}
