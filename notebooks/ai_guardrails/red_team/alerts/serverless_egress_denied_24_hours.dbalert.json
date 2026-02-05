@@ -1,8 +1,8 @@
 {
   "evaluation": {
     "source": {
-      "name": "html",
-      "display": "html",
+      "name": "network_events",
+      "display": "network_events",
       "aggregation": "AGGREGATION_UNSPECIFIED"
     },
     "comparison_operator": "IS_NOT_NULL",
@@ -42,7 +42,7 @@
     "  FROM network_events  ",
     ")",
     "",
-    "SELECT '<table><tbody><tr><th style=\"width: 80px\">Event Date</th><th style=\"width: 80px\">Workspace Id</th><th style=\"width: 80px\">Network Source</th><th style=\"width: auto\">Event Type</th><th style=\"width: auto\">Destination Type</th><th style=\"width: 80px\">Destination</th><th style=\"width: 80px\">Number of Events</th></tr></tbody>\\n<tbody>' || array_join(rows_html, '\\n') || '</tbody></table>' as html",
+    "SELECT '<table><tbody><tr><th style=\"width: 80px\">Event Date</th><th style=\"width: 80px\">Workspace Id</th><th style=\"width: 80px\">Network Source</th><th style=\"width: auto\">Event Type</th><th style=\"width: auto\">Destination Type</th><th style=\"width: 80px\">Destination</th><th style=\"width: 80px\">Number of Events</th></tr></tbody>\\n<tbody>' || array_join(rows_html, '\\n') || '</tbody></table>' as network_events",
     "FROM rows",
     "WHERE array_size(rows_html) > 0"
   ],
