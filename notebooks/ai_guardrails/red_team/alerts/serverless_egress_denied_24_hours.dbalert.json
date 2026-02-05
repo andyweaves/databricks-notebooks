@@ -1,14 +1,14 @@
 {
   "evaluation": {
     "source": {
-      "name": "event_time",
-      "display": "source",
-      "aggregation": "COUNT"
+      "name": "html",
+      "display": "html",
+      "aggregation": "AGGREGATION_UNSPECIFIED"
     },
-    "comparison_operator": "GREATER_THAN",
+    "comparison_operator": "IS_NOT_NULL",
     "threshold": {
       "value": {
-        "double_value": 0.0
+        "string_value": ""
       }
     },
     "empty_result_state": "OK",
@@ -23,27 +23,35 @@
   },
   "query_lines": [
     "-- Alert to check whether any serverless outbound network events have been denied within the last 24 hours ",
-    "SELECT",
-    "event_time,",
+    "WITH network_events AS (SELECT",
+    "to_date(event_time) AS event_date,",
     "workspace_id,",
     "network_source_type,",
+    "access_type AS event_type,",
     "destination_type,",
     "destination,",
-    "access_type AS event_type,",
-    "struct(dns_event, storage_event) AS network_event",
+    "count(*) AS num_events",
     "FROM system.access.outbound_network",
-    "WHERE event_time >= current_date() - INTERVAL 24 HOURS",
+    "WHERE event_time >= current_timestamp() - INTERVAL 24 HOURS",
     "AND access_type IN ('DROP', 'DRY_RUN_DENIAL')",
-    "ORDER BY event_time DESC"
+    "GROUP BY ALL",
+    "ORDER BY event_date DESC),",
+    "rows as (",
+    "  SELECT array_agg(",
+    "    '<tr><td>' || event_date || '</td><td>' || workspace_id || '</td><td>' || network_source_type || '</td><td>' || event_type || '</td><td>' || destination_type || '</td><td>' || destination || '</td><td>' || num_events || '</td></tr>') as rows_html",
+    "  FROM network_events  ",
+    ")",
+    "",
+    "SELECT '<table><tbody><tr><th style=\"width: 80px\">Event Date</th><th style=\"width: 80px\">Workspace Id</th><th style=\"width: 80px\">Network Source</th><th style=\"width: auto\">Event Type</th><th style=\"width: auto\">Destination Type</th><th style=\"width: 80px\">Destination</th><th style=\"width: 80px\">Number of Events</th></tr></tbody>\\n<tbody>' || array_join(rows_html, '\\n') || '</tbody></table>' as html",
+    "FROM rows",
+    "WHERE array_size(rows_html) > 0"
   ],
   "custom_description_lines": [
-    "<h3>Unauthorised outbound network access detected!</h3>",
+    "<h3>⚠️⚠️ Unauthorised outbound network access detected! ⚠️⚠️</h3>",
     "",
     "Alert \"{{ALERT_NAME}}\" changed status to {{ALERT_STATUS}}",
     "",
-    "<code>",
-    "<h4>Total number of events detected:</h4>",
-    "</code>",
+    "<h4>Network Events:</h4>",
     "",
     "{{QUERY_RESULT_TABLE}}",
     "<br>",

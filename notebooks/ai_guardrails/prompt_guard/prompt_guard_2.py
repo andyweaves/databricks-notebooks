@@ -214,7 +214,7 @@ print(f"Model saved to: {model_path}")
 # MAGIC             elif label == "PROMPT_INJECTION":
 # MAGIC                 reject_message = f"🚫🚫🚫 Your request has been flagged by AI guardrails as a potential prompt injection attempt: {response} 🚫🚫🚫" 
 # MAGIC             else:
-# MAGIC                 reject_message = f"🚫🚫🚫 Your request has been flagged by our AI guardrails: {response} 🚫🚫🚫" 
+# MAGIC                 reject_message = f"🚫🚫🚫 Your request has been flagged by AI guardrails: {response} 🚫🚫🚫" 
 # MAGIC             
 # MAGIC             return {
 # MAGIC                 "decision": "reject",
