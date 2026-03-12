@@ -15,8 +15,7 @@ From a security perspective, the most relevant service_names are likely to be:
 If a user asks about suspicious activity or events then data returned by the following functions / trusted assets are likely to be of interest:
 
 * failed_authentication_attempts()
-* failed_ip_access_attempts() 
-* failed_authorisation_attempts()
+* failed_ip_access_attempts()
 
 If a user asks for their searches to be timebound, then just add an AND clause to the SQL query (where 'X' below indicates the number of days the user has asked to search for): 
 

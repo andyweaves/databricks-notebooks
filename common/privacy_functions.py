@@ -241,7 +241,7 @@ class PIIScanner:
       results = self._get_aggregated_results(scanned)
 
     except Exception as e:
-      print(f"Failed to scan {securable_type} {securable_namespace} because of exception {e}")
+      print(f"Failed to scan dataframe because of exception {e}")
 
     return results
   

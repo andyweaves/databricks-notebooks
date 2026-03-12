@@ -21,9 +21,9 @@ def create_kms_key(session: Session, alias: str, description: str, tags: list):
             TargetKeyId=cmk.get("KeyMetadata").get("KeyId"))
         
     except ClientError as e:
-        print(e)
-        return e
-    
+        e.add_note(f"Failed to create KMS key with alias '{alias}'")
+        raise
+
     return cmk
 
 # COMMAND ----------
@@ -38,6 +38,7 @@ def generate_data_key(session: Session, key_alias: str, encryption_context: dict
         KeySpec="AES_256",
         EncryptionContext=encryption_context)
     except ClientError as e:
-        return e
-    
+        e.add_note(f"Failed to generate data key using alias '{key_alias}'")
+        raise
+
     return dek

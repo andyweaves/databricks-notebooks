@@ -15,17 +15,14 @@ def generate_kek() -> dict:
 
 # COMMAND ----------
 
-import random
-import string
-
 def generate_dek(with_iv_aad=False) -> dict:
     """
     Generates a data encryption key (DEK), iv and aad
     """
 
     dek = b64encode(secrets.token_bytes(24)).decode('utf-8')
-    iv = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
-    aad = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    iv = b64encode(secrets.token_bytes(12)).decode('utf-8')[:12]
+    aad = b64encode(secrets.token_bytes(8)).decode('utf-8')[:8]
 
     key = {"private_key": dek}
     if with_iv_aad:

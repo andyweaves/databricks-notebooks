@@ -24,10 +24,11 @@ display(df)
 
 import secrets  
   
-# If needed generate a 256 bit key, store as a secret...
+# WARNING: The key and tweak below are generated at runtime for demonstration purposes only.
+# In production, you MUST replace these with values stored in Databricks secrets (see commented lines below).
+# If you regenerate key/tweak values, you will permanently lose the ability to decrypt any data
+# that was encrypted with the previous key/tweak. Always persist and back up your keys.
 key = secrets.token_bytes(32).hex()
-
-# If needed generate a 7 byte tweak, store as a secret...
 tweak = secrets.token_bytes(7).hex()
 
 # It's highly recommended that you generate the key and tweak and then store them as Databricks secrets...
@@ -53,7 +54,7 @@ SPECIAL_CHAR_MODE = "REASSEMBLE"
 
 # Define the character sets...
 NUMERIC_CHARSET = "0123456789"
-ALPA_CHARSET_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+ALPHA_CHARSET_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 ALPHA_CHARSET_LOWER = "abcdefghijklmnopqrstuvwxyz"
 ALPHA_CHARSET_ALL = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 ALPHANUMERIC_CHARSET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -103,7 +104,7 @@ def encrypt_or_decrypt(text: str, charset: str, operation: str) -> str:
 def encrypt_or_decrypt_alpha(text: str, operation: str) -> str:
 
   if text.isupper():
-    return encrypt_or_decrypt(text, ALPA_CHARSET_UPPER, operation) 
+    return encrypt_or_decrypt(text, ALPHA_CHARSET_UPPER, operation) 
   elif text.islower():
     return encrypt_or_decrypt(text, ALPHA_CHARSET_LOWER, operation) 
   else:  

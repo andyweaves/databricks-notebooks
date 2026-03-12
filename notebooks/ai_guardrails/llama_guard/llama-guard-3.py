@@ -281,7 +281,11 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
         if isinstance(model_input, pd.DataFrame):
             model_input = model_input.to_dict("records")
             model_input = model_input[0]
-            assert isinstance(model_input, dict)
+            if not isinstance(model_input, dict):
+                return {
+                    "decision": "reject",
+                    "reject_message": f"Could not parse model input: {model_input}"
+                }
         elif not isinstance(model_input, dict):
             return {
                 "decision": "reject",
