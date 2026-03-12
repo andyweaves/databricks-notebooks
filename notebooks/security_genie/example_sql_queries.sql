@@ -15,7 +15,7 @@ SELECT
   logic,
   api
 FROM
-  arunuc.security_analysis.security_best_practices
+  IDENTIFIER(:catalog || '.' || :schema || '.security_best_practices')
 ORDER BY
   id ASC
 
@@ -41,8 +41,8 @@ SELECT
   sbp.doc_url,
   sc.additional_details
 FROM
-  arunuc.security_analysis.security_checks sc
-  LEFT JOIN arunuc.security_analysis.security_best_practices sbp ON sc.id = sbp.id
+  IDENTIFIER(:catalog || '.' || :schema || '.security_checks') sc
+  LEFT JOIN IDENTIFIER(:catalog || '.' || :schema || '.security_best_practices') sbp ON sc.id = sbp.id
 ORDER BY
   sbp.severity ASC,
   sc.workspaceid DESC
@@ -64,8 +64,8 @@ SELECT
   sbp.doc_url,
   sc.additional_details
 FROM
-  arunuc.security_analysis.security_checks sc
-  LEFT JOIN arunuc.security_analysis.security_best_practices sbp ON sc.id = sbp.id
+  IDENTIFIER(:catalog || '.' || :schema || '.security_checks') sc
+  LEFT JOIN IDENTIFIER(:catalog || '.' || :schema || '.security_best_practices') sbp ON sc.id = sbp.id
 WHERE
   sc.score = 1
 ORDER BY
@@ -79,6 +79,7 @@ ORDER BY
 
 -- COMMAND ----------
 
+WITH latest AS (SELECT MAX(event_date) AS max_date FROM system.access.audit)
 SELECT
   event_date,
   event_time,
@@ -92,12 +93,7 @@ FROM
   system.access.audit
 WHERE
   action_name = 'databricksAccess'
-  AND event_date >= (
-    SELECT
-      MAX(event_date)
-    FROM
-      system.access.audit
-  ) - INTERVAL 90 DAYS
+  AND event_date >= (SELECT max_date FROM latest) - INTERVAL 90 DAYS
 ORDER BY
   event_date DESC
 
@@ -141,6 +137,7 @@ ORDER BY
 
 -- COMMAND ----------
 
+WITH latest AS (SELECT MAX(event_date) AS max_date FROM system.access.audit)
 SELECT
   WINDOW(event_time, '60 minutes').start AS window_start,
   WINDOW(event_time, '60 minutes').
@@ -159,12 +156,7 @@ WHERE action_name IN (
       'IpAccessDenied',
       'accountIpAclsValidationFailed'
     )
-  AND event_date >= (
-    SELECT
-      MAX(event_date)
-    FROM
-      system.access.audit
-  ) - INTERVAL 90 DAYS
+  AND event_date >= (SELECT max_date FROM latest) - INTERVAL 90 DAYS
 GROUP BY
   ALL
 ORDER BY
@@ -178,6 +170,7 @@ ORDER BY
 
 -- COMMAND ----------
 
+WITH latest AS (SELECT MAX(event_date) AS max_date FROM system.access.audit)
 SELECT
   WINDOW(event_time, '60 minutes').start AS window_start,
   WINDOW(event_time, '60 minutes').end AS window_end,
@@ -204,12 +197,7 @@ FROM
 WHERE
   startswith(action_name, 'deltaSharing') AND
   request_params.is_ip_access_denied = 'true' AND
-  event_date >= (
-    SELECT
-      MAX(event_date)
-    FROM
-      system.access.audit
-  ) - INTERVAL 90 DAYS
+  event_date >= (SELECT max_date FROM latest) - INTERVAL 90 DAYS
 GROUP BY ALL
 ORDER BY
   window_end DESC,
@@ -222,6 +210,7 @@ ORDER BY
 
 -- COMMAND ----------
 
+WITH latest AS (SELECT MAX(event_date) AS max_date FROM system.access.audit)
 SELECT
   WINDOW(event_time, '60 minutes').start AS window_start, WINDOW(event_time, '60 minutes').end AS window_end,
   source_ip_address,
@@ -240,12 +229,7 @@ WHERE
     OR contains(lower(action_name), 'auth')
   )
   AND response.status_code = 401
-  AND event_date >= (
-    SELECT
-      MAX(event_date)
-    FROM
-      system.access.audit
-  ) - INTERVAL 999 DAYS
+  AND event_date >= (SELECT max_date FROM latest) - INTERVAL 999 DAYS
 GROUP BY
   ALL
 ORDER BY
@@ -259,6 +243,7 @@ ORDER BY
 
 -- COMMAND ----------
 
+WITH latest AS (SELECT MAX(event_date) AS max_date FROM system.access.audit)
 SELECT WINDOW(event_time, '60 minutes').start AS window_start, WINDOW(event_time, '60 minutes').end AS window_end,
 source_ip_address,
 ifnull(user_identity.email, request_params.user) AS username,
@@ -275,12 +260,7 @@ WHERE
     'accountIpAclsValidationFailed'
   )
   AND response.status_code = 403
-  AND event_date >= (
-    SELECT
-      MAX(event_date)
-    FROM
-      system.access.audit
-  ) - INTERVAL 90 DAYS
+  AND event_date >= (SELECT max_date FROM latest) - INTERVAL 90 DAYS
 GROUP BY
   ALL
 ORDER BY
@@ -294,6 +274,7 @@ ORDER BY
 
 -- COMMAND ----------
 
+WITH latest AS (SELECT MAX(event_date) AS max_date FROM system.access.audit)
 SELECT WINDOW(event_time, '60 minutes').start AS window_start, WINDOW(event_time, '60 minutes').end AS window_end,
 source_ip_address,
 ifnull(user_identity.email, request_params.user) AS username,
@@ -308,12 +289,7 @@ FROM system.access.audit
  WHERE
     action_name = 'getSecret'
     AND user_identity.email NOT IN ('System-User')
-AND event_date >= (
-    SELECT
-      MAX(event_date)
-    FROM
-      system.access.audit
-  ) - INTERVAL 90 DAYS
+AND event_date >= (SELECT max_date FROM latest) - INTERVAL 90 DAYS
 GROUP BY
   ALL
 ORDER BY

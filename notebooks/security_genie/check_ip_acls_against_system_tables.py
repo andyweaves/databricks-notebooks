@@ -40,11 +40,11 @@ ws_ips = [ip_acl for ip_acl in ws.ip_access_lists.list() if ip_acl.enabled and i
 
 data = [(ip_acl.label, ip_acl.ip_addresses) for ip_acl in ws_ips]
 data.append( # add private IPs to filter out internal traffic
-    ("private IPs", list(["192.168.0.0/16", "10.0.0.0/8", "72.16.0.0/12"]))
+    ("private IPs", list(["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"]))
 )
 
 dataset = (spark.createDataFrame(data, ["name", "cidrs"])
-           .select("name", explode("cidrs").alias("cidr"), expr("ipv4_cidr_to_range(cidr)").alias("cird_range")))
+           .select("name", explode("cidrs").alias("cidr"), expr("ipv4_cidr_to_range(cidr)").alias("cidr_range")))
 
 # COMMAND ----------
 

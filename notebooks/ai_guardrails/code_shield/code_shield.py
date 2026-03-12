@@ -61,11 +61,14 @@ model_serving_endpoint = dbutils.widgets.get("model_serving_endpoint")
 # MAGIC       pass
 # MAGIC
 # MAGIC     async def _invoke_guardrail_async(self, code_content: str):
-# MAGIC       """ 
+# MAGIC       """
 # MAGIC       Invokes Code Shield to scan code for security issues.
 # MAGIC       Returns the scan result.
 # MAGIC       """
-# MAGIC       result = await CodeShield.scan_code(code_content)
+# MAGIC       try:
+# MAGIC         result = await asyncio.wait_for(CodeShield.scan_code(code_content), timeout=30)
+# MAGIC       except asyncio.TimeoutError:
+# MAGIC         raise Exception("Code Shield scan timed out after 30 seconds")
 # MAGIC       return result
 # MAGIC
 # MAGIC     def _invoke_guardrail(self, code_content: str):
@@ -179,7 +182,8 @@ model_serving_endpoint = dbutils.widgets.get("model_serving_endpoint")
 # MAGIC         if (isinstance(model_input, pd.DataFrame)):
 # MAGIC             model_input = model_input.to_dict("records")
 # MAGIC             model_input = model_input[0]
-# MAGIC             assert(isinstance(model_input, dict))
+# MAGIC             if not isinstance(model_input, dict):
+# MAGIC                 return {"decision": "reject", "reject_reason": f"Couldn't parse model input: {model_input}"}
 # MAGIC         elif (not isinstance(model_input, dict)):
 # MAGIC             return {"decision": "reject", "reject_reason": f"Couldn't parse model input: {model_input}"}
 # MAGIC           

@@ -68,7 +68,7 @@ import concurrent.futures
 
 scan_results = pd.DataFrame()
 
-with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+with concurrent.futures.ThreadPoolExecutor(max_workers=min(os.cpu_count() or 4, 8)) as executor:
 
   futures = [executor.submit(pii_scanner.scan_and_tag_securable, f"{securable.table_catalog}.{securable.table_schema}.{securable.table_name}", securable.table_type) for securable in all_tables.collect()]
   

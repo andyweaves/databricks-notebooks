@@ -266,7 +266,21 @@ class LlamaGuard4Model(mlflow.pyfunc.PythonModel):
         if isinstance(model_input, pd.DataFrame):
             model_input = model_input.to_dict("records")
             model_input = model_input[0]
-            assert isinstance(model_input, dict)
+            if not isinstance(model_input, dict):
+                return {
+                    "decision": "reject",
+                    "reject_message": f"Could not parse model input: {model_input}",
+                    "guardrail_response": {
+                        "include_in_response": True,
+                        "response": {
+                            "flagged": True,
+                            "label": "ERROR",
+                            "categories": [],
+                            "category_names": [],
+                            "raw_output": "Invalid input format"
+                        }
+                    }
+                }
         elif not isinstance(model_input, dict):
             return {
                 "decision": "reject",

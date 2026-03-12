@@ -22,11 +22,14 @@ class CodeShieldGuardrail(mlflow.pyfunc.PythonModel):
       pass
 
     async def _invoke_guardrail_async(self, code_content: str):
-      """ 
+      """
       Invokes Code Shield to scan code for security issues.
       Returns the scan result.
       """
-      result = await CodeShield.scan_code(code_content)
+      try:
+        result = await asyncio.wait_for(CodeShield.scan_code(code_content), timeout=30)
+      except asyncio.TimeoutError:
+        raise Exception("Code Shield scan timed out after 30 seconds")
       return result
 
     def _invoke_guardrail(self, code_content: str):
@@ -140,7 +143,8 @@ class CodeShieldGuardrail(mlflow.pyfunc.PythonModel):
         if (isinstance(model_input, pd.DataFrame)):
             model_input = model_input.to_dict("records")
             model_input = model_input[0]
-            assert(isinstance(model_input, dict))
+            if not isinstance(model_input, dict):
+                return {"decision": "reject", "reject_reason": f"Couldn't parse model input: {model_input}"}
         elif (not isinstance(model_input, dict)):
             return {"decision": "reject", "reject_reason": f"Couldn't parse model input: {model_input}"}
           

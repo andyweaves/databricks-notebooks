@@ -234,7 +234,8 @@ print(f"Model saved to: {model_path}")
 # MAGIC         if isinstance(model_input, pd.DataFrame):
 # MAGIC             model_input = model_input.to_dict("records")
 # MAGIC             model_input = model_input[0]
-# MAGIC             assert isinstance(model_input, dict)
+# MAGIC             if not isinstance(model_input, dict):
+# MAGIC                 return {"decision": "reject", "reject_message": f"Could not parse model input: {model_input}"}
 # MAGIC         elif not isinstance(model_input, dict):
 # MAGIC             return {"decision": "reject", "reject_message": f"Could not parse model input: {model_input}"}
 # MAGIC           
@@ -408,7 +409,7 @@ response = ws.serving_endpoints.query(
         }
     }
 )
-print(print(f"✅ Model serving endpoint query successfully: \n{response.predictions}"))
+print(f"✅ Model serving endpoint query successfully: \n{response.predictions}")
 
 # COMMAND ----------
 
