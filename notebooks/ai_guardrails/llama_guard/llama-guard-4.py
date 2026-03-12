@@ -238,7 +238,8 @@ class LlamaGuard4Model(mlflow.pyfunc.PythonModel):
                 "reject_message": reject_message,
                 "guardrail_response": {
                     "include_in_response": True,
-                    "response": response
+                    "response": response,
+                    "finishReason": "input_guardrail_triggered"
                 }
             }
         else:
