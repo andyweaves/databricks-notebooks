@@ -181,19 +181,19 @@ print(f"Model saved to: {model_path}")
 # MAGIC         self.lg4_processor = None
 # MAGIC         self.device = None
 # MAGIC         self.unsafe_categories = """S1: Violent Crimes
-# MAGIC S2: Non-Violent Crimes
-# MAGIC S3: Sex-Related Crimes
-# MAGIC S4: Child Sexual Exploitation
-# MAGIC S5: Defamation
-# MAGIC S6: Specialized Advice
-# MAGIC S7: Privacy
-# MAGIC S8: Intellectual Property
-# MAGIC S9: Indiscriminate Weapons
-# MAGIC S10: Hate
-# MAGIC S11: Suicide & Self-Harm
-# MAGIC S12: Sexual Content
-# MAGIC S13: Elections
-# MAGIC S14: Code Interpreter Abuse"""
+# MAGIC         S2: Non-Violent Crimes
+# MAGIC         S3: Sex-Related Crimes
+# MAGIC         S4: Child Sexual Exploitation
+# MAGIC         S5: Defamation
+# MAGIC         S6: Specialized Advice
+# MAGIC         S7: Privacy
+# MAGIC         S8: Intellectual Property
+# MAGIC         S9: Indiscriminate Weapons
+# MAGIC         S10: Hate
+# MAGIC         S11: Suicide & Self-Harm
+# MAGIC         S12: Sexual Content
+# MAGIC         S13: Elections
+# MAGIC         S14: Code Interpreter Abuse"""
 # MAGIC
 # MAGIC     def load_context(self, context):
 # MAGIC         """Load both LlamaFirewall and Llama Guard 4 model."""
