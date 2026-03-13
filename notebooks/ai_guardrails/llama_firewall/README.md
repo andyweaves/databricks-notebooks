@@ -12,7 +12,7 @@ The other guardrails in this repo (`llama_guard/`, `prompt_guard/`, `code_shield
 |------------|-------------------|----------------------|
 | **Prompt Injection Detection** | Deploy Prompt Guard 2 separately (`../prompt_guard/`) | `ScannerType.PROMPT_GUARD` -- same model, unified config |
 | **Code Vulnerability Scanning** | Deploy Code Shield separately (`../code_shield/`) | `ScannerType.CODE_SHIELD` -- same engine, unified config |
-| **Content Safety** | Deploy Llama Guard 3/4 separately (`../llama_guard/`) | Not yet in LlamaFirewall (use standalone) |
+| **Content Safety** | Deploy Llama Guard 3/4 separately (`../llama_guard/`) | Llama Guard 4 alongside LlamaFirewall in a unified pyfunc (see `llama_firewall_llama_guard.py`) |
 | **Agent Chain-of-Thought Auditing** | **Not available** | `ScannerType.AGENT_ALIGNMENT` -- **unique to LlamaFirewall** |
 | **Installation** | Multiple packages + manual HF downloads | `pip install llamafirewall` |
 | **Configuration** | Custom Python class per guardrail | Declarative scanner assignment per role |
@@ -26,6 +26,7 @@ The other guardrails in this repo (`llama_guard/`, `prompt_guard/`, `code_shield
 | `llama-firewall-input.py` | PromptGuard | Input guardrail | `../prompt_guard/llama-prompt-guard-2.py` |
 | `llama-firewall-output.py` | CodeShield | Output guardrail | `../code_shield/llama-code-shield.py` |
 | `llama-firewall-alignment.py` | AlignmentCheck | Input guardrail | **No equivalent** |
+| `llama-firewall-llama-guard.py` | PromptGuard + Llama Guard 4 | Input guardrail | `../prompt_guard/llama-prompt-guard-2.py` + `../llama_guard/llama-guard-4.py` combined |
 
 ### Deployment Notebooks (underscored names)
 
@@ -34,6 +35,7 @@ The other guardrails in this repo (`llama_guard/`, `prompt_guard/`, `code_shield
 | `llama_firewall_input.py` | Deploy PromptGuard via LlamaFirewall | `../prompt_guard/prompt_guard_2.py` |
 | `llama_firewall_output.py` | Deploy CodeShield via LlamaFirewall | `../code_shield/code_shield.py` |
 | `llama_firewall_alignment.py` | Deploy AlignmentCheck (agent auditing) | **No equivalent** |
+| `llama_firewall_llama_guard.py` | Deploy PromptGuard + Llama Guard 4 in one endpoint | `../prompt_guard/prompt_guard_2.py` + `../llama_guard/llama_guard_4_gpu.py` combined |
 
 ## LlamaFirewall Scanners
 
@@ -66,12 +68,14 @@ The other guardrails in this repo (`llama_guard/`, `prompt_guard/`, `code_shield
 
 ## Recommended Architecture
 
-For comprehensive agent security, deploy all three scanners:
+For comprehensive agent security, deploy all scanners:
 
 ```
-User Input → [PromptGuard] → Agent LLM → [AlignmentCheck] → [CodeShield] → Response
-               (input)                       (input)           (output)
+User Input → [PromptGuard + Llama Guard 4] → Agent LLM → [AlignmentCheck] → [CodeShield] → Response
+               (input)                                       (input)           (output)
 ```
+
+Or use the combined endpoint for PromptGuard + Llama Guard 4 to reduce the number of serving endpoints.
 
 ## Quick Start
 
