@@ -6,11 +6,8 @@ LlamaFirewall is Meta's unified guardrail framework that orchestrates multiple
 security scanners. This model class uses the CodeShield scanner to detect
 insecure LLM-generated code.
 
-Compared to deploying Code Shield standalone:
-- LlamaFirewall wraps CodeShield with a unified policy engine
-- Same underlying Semgrep + regex-based static analysis
-- Covers 50+ CWEs across 8 programming languages
-- Declarative configuration via scanner assignments
+CodeShield uses Semgrep + regex-based static analysis covering 50+ CWEs
+across 8 programming languages. No ML model downloads are needed.
 
 This guardrail:
 1. Translates OpenAI Chat Completions output format to extract code content
