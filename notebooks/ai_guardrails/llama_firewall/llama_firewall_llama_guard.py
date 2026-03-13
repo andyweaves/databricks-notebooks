@@ -223,7 +223,8 @@ print(f"Model saved to: {model_path}")
 # MAGIC         )
 # MAGIC         self.lg4_model.eval()
 # MAGIC
-# MAGIC         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# MAGIC         # Use the model's actual device (important when device_map="auto" spreads across GPUs)
+# MAGIC         self.device = next(self.lg4_model.parameters()).device
 # MAGIC
 # MAGIC     def parse_category(self, reason: str) -> str:
 # MAGIC         """Parse safety category code to human-readable text."""
@@ -589,14 +590,11 @@ for i, test in enumerate(test_cases, 1):
     print(f"Input: \"{test['content'][:70]}...\"" if len(test['content']) > 70 else f"Input: \"{test['content']}\"")
     print(f"Decision: {result['decision']}")
 
-    if result['decision'] == 'reject':
-        response = result.get('guardrail_response', {}).get('response', {})
-        pg = response.get('prompt_guard', {})
-        lg4 = response.get('llama_guard_4', {})
-        print(f"  PromptGuard: {'FLAGGED' if pg.get('flagged') else 'SAFE'} (label: {pg.get('label', 'N/A')})")
-        print(f"  LlamaGuard4: {'FLAGGED' if lg4.get('flagged') else 'SAFE'} (categories: {lg4.get('categories', [])})")
-    else:
-        print(f"  ✅ Both guardrails passed")
+    response = result.get('guardrail_response', {}).get('response', {})
+    pg = response.get('prompt_guard', {})
+    lg4 = response.get('llama_guard_4', {})
+    print(f"  PromptGuard: {'FLAGGED' if pg.get('flagged') else 'SAFE'} (label: {pg.get('label', 'N/A')})")
+    print(f"  LlamaGuard4: {'FLAGGED' if lg4.get('flagged') else 'SAFE'} (categories: {lg4.get('categories', [])}, raw: {repr(lg4.get('raw_output', 'N/A'))})")
 
     print("-" * 80)
 

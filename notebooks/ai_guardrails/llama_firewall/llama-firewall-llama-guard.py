@@ -77,7 +77,8 @@ S14: Code Interpreter Abuse"""
         )
         self.lg4_model.eval()
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Use the model's actual device (important when device_map="auto" spreads across GPUs)
+        self.device = next(self.lg4_model.parameters()).device
 
     def parse_category(self, reason: str) -> str:
         """Parse safety category code to human-readable text."""
