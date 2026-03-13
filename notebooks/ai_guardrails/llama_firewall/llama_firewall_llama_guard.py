@@ -53,6 +53,7 @@ from databricks.sdk import WorkspaceClient
 
 ws = WorkspaceClient()
 
+dbutils.widgets.dropdown(name="model", defaultValue="meta-llama/Llama-Guard-4-12B", choices=["meta-llama/Llama-Guard-4-12B"], label="Which Llama Guard Model to deploy")
 dbutils.widgets.text(name="hf_token", defaultValue="", label="Hugging Face access token")
 catalogs = sorted([x.full_name for x in list(ws.catalogs.list())])
 dbutils.widgets.dropdown("catalog", defaultValue=catalogs[0], choices=catalogs[:1000], label="Catalog")
@@ -82,7 +83,7 @@ model_serving_endpoint = dbutils.widgets.get("model_serving_endpoint")
 
 # DBTITLE 1,Configure LlamaFirewall
 import subprocess
-result = subprocess.run(["llamafirewall", "configure"], capture_output=True, text=True, timeout=120)
+result = subprocess.run(["llamafirewall", "configure"], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=600)
 print(result.stdout)
 if result.returncode != 0:
     print(f"Warning: {result.stderr}")
@@ -96,7 +97,7 @@ print("✅ LlamaFirewall configured!")
 from transformers import AutoConfig, AutoProcessor, Llama4ForConditionalGeneration
 import torch
 
-model_id = "meta-llama/Llama-Guard-4-12B"
+model_id = dbutils.widgets.get("model")
 
 # Load config and set attention_chunk_size to avoid cache initialization errors
 config = AutoConfig.from_pretrained(model_id, token=dbutils.widgets.get("hf_token"))
