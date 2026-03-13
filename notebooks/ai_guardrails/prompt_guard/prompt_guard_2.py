@@ -34,7 +34,7 @@ ws = WorkspaceClient()
 
 dbutils.widgets.dropdown(name="model", defaultValue="meta-llama/Llama-Prompt-Guard-2-22M", choices=["meta-llama/Llama-Prompt-Guard-2-22M", "meta-llama/Llama-Guard-4-12B", "meta-llama/Llama-Prompt-Guard-2-86M"], label="Which Prompt Guard Model to deploy")
 dbutils.widgets.text(name="hf_token", defaultValue="", label="Hugging Face access token")
-catalogs = [x.full_name for x in list(ws.catalogs.list())]
+catalogs = sorted([x.full_name for x in list(ws.catalogs.list())])
 dbutils.widgets.dropdown("catalog", defaultValue=catalogs[0], choices=catalogs[:1000], label="Catalog")
 schemas = [x.name for x in list(ws.schemas.list(catalog_name=dbutils.widgets.get("catalog")))]
 dbutils.widgets.dropdown("schema", defaultValue=schemas[0], choices=schemas[:1000], label="Schema")
@@ -94,14 +94,13 @@ print(f"Model saved to: {model_path}")
 
 # MAGIC %%writefile "{model_serving_endpoint}.py"
 # MAGIC
-# MAGIC """
-# MAGIC Custom Guardrail using a Llama-Prompt-Guard-2 model.
-# MAGIC
+# MAGIC """Custom Guardrail using a Llama-Prompt-Guard-2 model.
 # MAGIC This guardrail:
 # MAGIC 1. Translates OpenAI Chat Completions format to our internal format
 # MAGIC 2. Uses Llama-Prompt-Guard-2 to detect jailbreaks and prompt injections
 # MAGIC 3. Translates the model's response back to Databricks Guardrails format
 # MAGIC """
+# MAGIC
 # MAGIC from typing import Any, Dict, List
 # MAGIC import mlflow
 # MAGIC from mlflow.models import set_model
@@ -112,34 +111,35 @@ print(f"Model saved to: {model_path}")
 # MAGIC     def __init__(self):
 # MAGIC         self.model = None
 # MAGIC         self.tokenizer = None
+# MAGIC         self.threshold = float(os.environ.get("GUARDRAIL_THRESHOLD", "0.85"))
 # MAGIC
 # MAGIC     def load_context(self, context):
 # MAGIC         """Load the Llama-Prompt-Guard model and tokenizer from artifacts."""
 # MAGIC         from transformers import AutoTokenizer, AutoModelForSequenceClassification
 # MAGIC         import torch
-# MAGIC         
-# MAGIC         # Load from the artifacts directory instead of downloading from HuggingFace
+# MAGIC
 # MAGIC         model_path = context.artifacts["model_files"]
-# MAGIC         
-# MAGIC         # Load tokenizer and model from local path
+# MAGIC
 # MAGIC         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
 # MAGIC         self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
 # MAGIC         self.model.eval()
-# MAGIC         
-# MAGIC         # Set device
+# MAGIC
 # MAGIC         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # MAGIC         self.model.to(self.device)
 # MAGIC
 # MAGIC     def _invoke_guardrail(self, input_text: str) -> Dict[str, Any]:
-# MAGIC         """ 
+# MAGIC         """
 # MAGIC         Invokes Llama-Prompt-Guard-2 model to detect jailbreaks and prompt injections.
-# MAGIC         
+# MAGIC
+# MAGIC         Prompt Guard 2 is a binary classifier:
+# MAGIC         LABEL_0 = benign
+# MAGIC         LABEL_1 = malicious (jailbreak or prompt injection)
+# MAGIC
 # MAGIC         Returns:
-# MAGIC             Dict with 'flagged' (bool) and 'label' (str) keys
+# MAGIC             Dict with 'flagged' (bool), 'label' (str), and 'score' (float) keys
 # MAGIC         """
 # MAGIC         import torch
-# MAGIC         
-# MAGIC         # Tokenize input
+# MAGIC
 # MAGIC         inputs = self.tokenizer(
 # MAGIC             input_text,
 # MAGIC             return_tensors="pt",
@@ -147,33 +147,24 @@ print(f"Model saved to: {model_path}")
 # MAGIC             truncation=True,
 # MAGIC             max_length=512
 # MAGIC         ).to(self.device)
-# MAGIC         
-# MAGIC         # Get model prediction
+# MAGIC
 # MAGIC         with torch.no_grad():
-# MAGIC             outputs = self.model(**inputs)
-# MAGIC             logits = outputs.logits
-# MAGIC             predicted_class = torch.argmax(logits, dim=-1).item()
-# MAGIC         
-# MAGIC         # Map class to label
-# MAGIC         # Llama-Prompt-Guard-2 classes:
-# MAGIC         # 0: SAFE
-# MAGIC         # 1: JAILBREAK
-# MAGIC         # 2: PROMPT_INJECTION
-# MAGIC         label_map = {
-# MAGIC             0: "SAFE",
-# MAGIC             1: "JAILBREAK",
-# MAGIC             2: "PROMPT_INJECTION"
-# MAGIC         }
-# MAGIC         
-# MAGIC         label = label_map.get(predicted_class, "UNKNOWN")
-# MAGIC         flagged = label != "SAFE"
-# MAGIC         
+# MAGIC             logits = self.model(**inputs).logits
+# MAGIC             probabilities = torch.softmax(logits, dim=-1)
+# MAGIC             predicted_class_id = logits.argmax(dim=-1).item()
+# MAGIC             label_map = {"LABEL_0": "SAFE", "LABEL_1": "MALICIOUS"} 
+# MAGIC             raw_label = self.model.config.id2label[predicted_class_id]
+# MAGIC             label = label_map.get(raw_label, raw_label)  
+# MAGIC             malicious_score = probabilities[0][1].item()
+# MAGIC
+# MAGIC         flagged = malicious_score >= self.threshold
+# MAGIC
 # MAGIC         return {
 # MAGIC             "flagged": flagged,
 # MAGIC             "label": label,
-# MAGIC             "confidence": torch.softmax(logits, dim=-1)[0][predicted_class].item()
+# MAGIC             "score": malicious_score
 # MAGIC         }
-# MAGIC     
+# MAGIC
 # MAGIC     def _translate_input_guardrail_request(self, request: Dict[str, Any]) -> str:
 # MAGIC         """
 # MAGIC         Translates an OpenAI Chat Completions (ChatV1) request to text for the guardrail.
@@ -182,7 +173,7 @@ print(f"Model saved to: {model_path}")
 # MAGIC             raise Exception(f"Invalid mode: {request}.")
 # MAGIC         if ("messages" not in request):
 # MAGIC             raise Exception(f"Missing key \"messages\" in request: {request}.")
-# MAGIC         
+# MAGIC
 # MAGIC         messages = request["messages"]
 # MAGIC         combined_text = []
 # MAGIC
@@ -197,28 +188,29 @@ print(f"Model saved to: {model_path}")
 # MAGIC                 for item in content:
 # MAGIC                     if item.get("type") == "text":
 # MAGIC                         combined_text.append(item["text"])
-# MAGIC                     # Note: Llama-Prompt-Guard is text-only, so we skip images
 # MAGIC             else:
 # MAGIC                 raise Exception(f"Invalid value type for \"content\": {request}")
-# MAGIC         
+# MAGIC
 # MAGIC         return " ".join(combined_text)
-# MAGIC     
+# MAGIC
 # MAGIC     def _translate_guardrail_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
 # MAGIC         """
 # MAGIC         Translates the Llama-Prompt-Guard response to Databricks Guardrails format.
 # MAGIC         """
 # MAGIC         if response["flagged"]:
-# MAGIC             label = response["label"]
-# MAGIC             if label == "JAILBREAK":
-# MAGIC                 reject_message = f"🚫🚫🚫 Your request has been flagged by AI guardrails as a potential jailbreak attempt: {response} 🚫🚫🚫" 
-# MAGIC             elif label == "PROMPT_INJECTION":
-# MAGIC                 reject_message = f"🚫🚫🚫 Your request has been flagged by AI guardrails as a potential prompt injection attempt: {response} 🚫🚫🚫" 
-# MAGIC             else:
-# MAGIC                 reject_message = f"🚫🚫🚫 Your request has been flagged by AI guardrails: {response} 🚫🚫🚫" 
-# MAGIC             
+# MAGIC             reject_message = (
+# MAGIC                 f"🚫🚫🚫 Your request has been flagged by AI guardrails as a potential "
+# MAGIC                 f"jailbreak or prompt injection attempt (score: {response['score']:.3f}). 🚫🚫🚫"
+# MAGIC             )
+# MAGIC
 # MAGIC             return {
 # MAGIC                 "decision": "reject",
-# MAGIC                 "reject_message": reject_message
+# MAGIC                 "reject_message": reject_message,
+# MAGIC                 "guardrail_response": {
+# MAGIC                     "include_in_response": True,
+# MAGIC                     "response": response,
+# MAGIC                     "finishReason": "input_guardrail_triggered"
+# MAGIC                 }
 # MAGIC             }
 # MAGIC         else:
 # MAGIC             return {
@@ -230,7 +222,6 @@ print(f"Model saved to: {model_path}")
 # MAGIC         """
 # MAGIC         Applies the guardrail to the model input and returns a guardrail response.
 # MAGIC         """
-# MAGIC         # Convert DataFrame to dict if needed
 # MAGIC         if isinstance(model_input, pd.DataFrame):
 # MAGIC             model_input = model_input.to_dict("records")
 # MAGIC             model_input = model_input[0]
@@ -238,20 +229,15 @@ print(f"Model saved to: {model_path}")
 # MAGIC                 return {"decision": "reject", "reject_message": f"Could not parse model input: {model_input}"}
 # MAGIC         elif not isinstance(model_input, dict):
 # MAGIC             return {"decision": "reject", "reject_message": f"Could not parse model input: {model_input}"}
-# MAGIC           
+# MAGIC
 # MAGIC         try:
-# MAGIC             # Translate input
 # MAGIC             input_text = self._translate_input_guardrail_request(model_input)
-# MAGIC             
-# MAGIC             # Invoke guardrail
 # MAGIC             guardrail_response = self._invoke_guardrail(input_text)
-# MAGIC             
-# MAGIC             # Translate response
 # MAGIC             result = self._translate_guardrail_response(guardrail_response)
 # MAGIC             return result
 # MAGIC         except Exception as e:
 # MAGIC             return {"decision": "reject", "reject_message": f"Failed with an exception: {e}"}
-# MAGIC       
+# MAGIC
 # MAGIC set_model(LlamaPromptGuardModel())
 
 # COMMAND ----------

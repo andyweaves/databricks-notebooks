@@ -46,7 +46,7 @@ ws = WorkspaceClient()
 
 dbutils.widgets.dropdown(name="model", defaultValue="meta-llama/Llama-Guard-4-12B", choices=["meta-llama/Llama-Guard-4-12B"], label="Which Llama Guard Model to deploy")
 dbutils.widgets.text(name="hf_token", defaultValue="", label="Hugging Face access token")
-catalogs = [x.full_name for x in list(ws.catalogs.list())]
+catalogs = sorted([x.full_name for x in list(ws.catalogs.list())])
 dbutils.widgets.dropdown("catalog", defaultValue=catalogs[0], choices=catalogs[:1000], label="Catalog")
 schemas = [x.name for x in list(ws.schemas.list(catalog_name=dbutils.widgets.get("catalog")))]
 dbutils.widgets.dropdown("schema", defaultValue=schemas[0], choices=schemas[:1000], label="Schema")
