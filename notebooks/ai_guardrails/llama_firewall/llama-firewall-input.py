@@ -1,27 +1,18 @@
-
 """
-Custom Input Guardrail combining LlamaFirewall (PromptGuard) with Llama Guard 4 content safety.
+Custom Guardrail using LlamaFirewall with PromptGuard and Llama Guard 4.
 
-This model class runs both guardrails in a single endpoint:
-- LlamaFirewall PromptGuard: Detects jailbreaks and prompt injections
-- Llama Guard 4: Classifies content across 14 safety categories (S1-S14)
+This guardrail combines two scanners in a single input endpoint:
+1. LlamaFirewall PromptGuard — detects jailbreaks and prompt injections
+2. Llama Guard 4 — detects harmful content across 14 safety categories (S1-S14)
 
-Why combine them?
-- PromptGuard catches prompt manipulation attacks (jailbreaks, injections)
-- Llama Guard 4 catches harmful content categories (violence, hate, etc.)
-- Together they provide defense-in-depth from a single Model Serving endpoint
-
-This guardrail:
-1. Translates OpenAI Chat Completions format to both guardrail formats
-2. Runs LlamaFirewall PromptGuard AND Llama Guard 4 in sequence
-3. Rejects if EITHER guardrail flags the input
-4. Returns combined results in Databricks Guardrails format
+The request is rejected if EITHER scanner flags the input.
 """
 from typing import Any, Dict, List
 import mlflow
 from mlflow.models import set_model
 import pandas as pd
 import os
+
 
 class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
     def __init__(self):
@@ -31,31 +22,29 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
         self.lg4_processor = None
         self.device = None
         self.unsafe_categories = """S1: Violent Crimes
-        S2: Non-Violent Crimes
-        S3: Sex-Related Crimes
-        S4: Child Sexual Exploitation
-        S5: Defamation
-        S6: Specialized Advice
-        S7: Privacy
-        S8: Intellectual Property
-        S9: Indiscriminate Weapons
-        S10: Hate
-        S11: Suicide & Self-Harm
-        S12: Sexual Content
-        S13: Elections
-        S14: Code Interpreter Abuse"""
+            S2: Non-Violent Crimes
+            S3: Sex-Related Crimes
+            S4: Child Sexual Exploitation
+            S5: Defamation
+            S6: Specialized Advice
+            S7: Privacy
+            S8: Intellectual Property
+            S9: Indiscriminate Weapons
+            S10: Hate
+            S11: Suicide & Self-Harm
+            S12: Sexual Content
+            S13: Elections
+            S14: Code Interpreter Abuse"""
 
     def load_context(self, context):
-        """Load both LlamaFirewall and Llama Guard 4 model."""
-        from llamafirewall import LlamaFirewall, Role, ScannerType
+        """Load LlamaFirewall (PromptGuard) and Llama Guard 4 model."""
+        from llamafirewall import LlamaFirewall, ScannerType, Role
         from transformers import AutoConfig, AutoProcessor, Llama4ForConditionalGeneration
         import torch
 
-        # Initialize LlamaFirewall with PromptGuard
+        # Initialize LlamaFirewall with PromptGuard scanner
         self.firewall = LlamaFirewall(
-            scanners={
-                Role.USER: [ScannerType.PROMPT_GUARD],
-            }
+            scanners={Role.USER: [ScannerType.PROMPT_GUARD]}
         )
 
         # Load Llama Guard 4 from artifacts
@@ -73,11 +62,10 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
         )
         self.lg4_model.eval()
 
-        # Use the model's actual device (important when device_map="auto" spreads across GPUs)
-        self.device = next(self.lg4_model.parameters()).device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def parse_category(self, reason: str) -> str:
-        """Parse safety category code to human-readable text."""
+        """Parse a safety category code (e.g. 'S1') into human-readable text."""
         if reason is None:
             return "Unknown"
         for item in self.unsafe_categories.split("\n"):
@@ -88,24 +76,35 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
                 return category
         return "Unknown"
 
-    def _invoke_prompt_guard(self, input_text: str) -> Dict[str, Any]:
-        """Run LlamaFirewall PromptGuard scanner."""
+    def _invoke_prompt_guard(self, text: str) -> Dict[str, Any]:
+        """
+        Scan text using LlamaFirewall PromptGuard for jailbreaks/injections.
+
+        Returns:
+            Dict with 'flagged' (bool), 'label' (str), and 'raw_output' (str) keys
+        """
         from llamafirewall import UserMessage
 
-        result = self.firewall.scan(UserMessage(content=input_text))
+        result = self.firewall.scan(UserMessage(content=text))
+
         flagged = result.action.value != "allow"
-        label = result.reason if result.reason else ("UNSAFE" if flagged else "SAFE")
-        score = result.score if hasattr(result, "score") and result.score is not None else (1.0 if flagged else 0.0)
 
         return {
             "flagged": flagged,
-            "label": label,
-            "score": score,
-            "scanner": "LlamaFirewall/PromptGuard"
+            "label": "MALICIOUS" if flagged else "SAFE",
+            "action": result.action.value,
+            "reason": str(result.reason) if result.reason else None,
+            "raw_output": str(result)
         }
 
     def _invoke_llama_guard_4(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
-        """Run Llama Guard 4 content safety classifier."""
+        """
+        Invoke Llama Guard 4 to detect harmful content.
+
+        Returns:
+            Dict with 'flagged' (bool), 'label' (str), 'categories' (list),
+            'category_names' (list), and 'raw_output' (str) keys
+        """
         import torch
 
         # Format messages for Llama Guard 4
@@ -135,9 +134,11 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
             outputs[:, inputs["input_ids"].shape[-1]:]
         )[0].strip()
 
+        # Remove special tokens
         result = result.replace("<|eot_id|>", "").replace("<|eot|>", "").strip()
 
         flagged = result.lower().startswith("unsafe")
+
         categories = []
         category_names = []
 
@@ -159,18 +160,19 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
             "label": "UNSAFE" if flagged else "SAFE",
             "categories": categories,
             "category_names": category_names,
-            "scanner": "LlamaGuard4",
             "raw_output": result
         }
 
-    def _translate_input_guardrail_request(self, request: Dict[str, Any]) -> tuple:
+    def _translate_input_guardrail_request(self, request: Dict[str, Any]):
         """
-        Translates an OpenAI Chat Completions request.
-        Returns (combined_text, messages_list) for both guardrails.
+        Translates an OpenAI Chat Completions (ChatV1) request.
+
+        Returns:
+            Tuple of (text for PromptGuard, messages for Llama Guard 4)
         """
         if (request["mode"]["phase"] != "input") or (request["mode"]["stream_mode"] is None):
             raise Exception(f"Invalid mode: {request}.")
-        if ("messages" not in request):
+        if "messages" not in request:
             raise Exception(f"Missing key \"messages\" in request: {request}.")
 
         messages = request["messages"]
@@ -178,7 +180,7 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
         formatted_messages = []
 
         for message in messages:
-            if ("content" not in message):
+            if "content" not in message:
                 raise Exception(f"Missing key \"content\" in \"messages\": {request}.")
 
             content = message["content"]
@@ -203,77 +205,89 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
 
     def _translate_guardrail_response(self, pg_result: Dict[str, Any], lg4_result: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Translates combined guardrail results to Databricks Guardrails format.
-        Rejects if EITHER guardrail flags the input.
+        Combine PromptGuard and Llama Guard 4 results into Databricks Guardrails format.
+        Rejects if EITHER scanner flags the input.
         """
-        combined_response = {
-            "prompt_guard": pg_result,
-            "llama_guard_4": lg4_result
-        }
+        flagged = pg_result["flagged"] or lg4_result["flagged"]
 
-        if pg_result["flagged"] and lg4_result["flagged"]:
-            categories_str = ", ".join(lg4_result["category_names"]) if lg4_result["category_names"] else "Unknown"
-            category_codes = ", ".join(lg4_result["categories"]) if lg4_result["categories"] else "Unknown"
+        if flagged:
+            reasons = []
+            if pg_result["flagged"]:
+                reasons.append(f"PromptGuard: {pg_result['label']} (action: {pg_result['action']})")
+            if lg4_result["flagged"]:
+                categories_str = ", ".join(lg4_result["category_names"]) if lg4_result["category_names"] else "Unknown"
+                category_codes = ", ".join(lg4_result["categories"]) if lg4_result["categories"] else "Unknown"
+                reasons.append(f"Llama Guard 4: {categories_str} ({category_codes})")
+
             reject_message = (
-                f"🚫🚫🚫 Your request has been flagged by multiple guardrails. 🚫🚫🚫 "
-                f"PromptGuard: {pg_result['label']} | "
-                f"Llama Guard 4: {categories_str} ({category_codes})"
+                f"Your request has been flagged by AI guardrails as potentially harmful. "
+                f"Detected by: {'; '.join(reasons)}"
             )
+
             return {
                 "decision": "reject",
                 "reject_message": reject_message,
-                "guardrail_response": {"include_in_response": True, "response": combined_response}
-            }
-        elif pg_result["flagged"]:
-            reject_message = (
-                f"🚫🚫🚫 Your request has been flagged by LlamaFirewall (PromptGuard): "
-                f"{pg_result['label']} (score: {pg_result['score']:.3f}) 🚫🚫🚫"
-            )
-            return {
-                "decision": "reject",
-                "reject_message": reject_message,
-                "guardrail_response": {"include_in_response": True, "response": combined_response}
-            }
-        elif lg4_result["flagged"]:
-            categories_str = ", ".join(lg4_result["category_names"]) if lg4_result["category_names"] else "Unknown"
-            category_codes = ", ".join(lg4_result["categories"]) if lg4_result["categories"] else "Unknown"
-            reject_message = (
-                f"🚫🚫🚫 Your request has been flagged by Llama Guard 4 as potentially harmful. 🚫🚫🚫 "
-                f"Detected categories: {categories_str} ({category_codes})"
-            )
-            return {
-                "decision": "reject",
-                "reject_message": reject_message,
-                "guardrail_response": {"include_in_response": True, "response": combined_response}
+                "guardrail_response": {
+                    "include_in_response": True,
+                    "response": {
+                        "prompt_guard": pg_result,
+                        "llama_guard_4": lg4_result
+                    },
+                    "finishReason": "input_guardrail_triggered"
+                }
             }
         else:
             return {
                 "decision": "proceed",
-                "guardrail_response": {"include_in_response": True, "response": combined_response}
+                "guardrail_response": {
+                    "include_in_response": True,
+                    "response": {
+                        "prompt_guard": pg_result,
+                        "llama_guard_4": lg4_result
+                    }
+                }
             }
 
     def predict(self, context, model_input, params=None):
-        """
-        Applies both guardrails and returns a combined response.
-        """
+        """Applies the guardrail to the model input and returns a guardrail response."""
         if isinstance(model_input, pd.DataFrame):
             model_input = model_input.to_dict("records")
             model_input = model_input[0]
             if not isinstance(model_input, dict):
-                return {"decision": "reject", "reject_message": f"Could not parse model input: {model_input}"}
+                return {
+                    "decision": "reject",
+                    "reject_message": f"Could not parse model input: {model_input}",
+                    "guardrail_response": {
+                        "include_in_response": True,
+                        "response": {"flagged": True, "label": "ERROR"}
+                    }
+                }
         elif not isinstance(model_input, dict):
-            return {"decision": "reject", "reject_message": f"Could not parse model input: {model_input}"}
+            return {
+                "decision": "reject",
+                "reject_message": f"Could not parse model input: {model_input}",
+                "guardrail_response": {
+                    "include_in_response": True,
+                    "response": {"flagged": True, "label": "ERROR"}
+                }
+            }
 
         try:
-            combined_text, messages = self._translate_input_guardrail_request(model_input)
+            text, messages = self._translate_input_guardrail_request(model_input)
 
-            # Run both guardrails
-            pg_result = self._invoke_prompt_guard(combined_text)
+            pg_result = self._invoke_prompt_guard(text)
             lg4_result = self._invoke_llama_guard_4(messages)
 
             result = self._translate_guardrail_response(pg_result, lg4_result)
             return result
         except Exception as e:
-            return {"decision": "reject", "reject_message": f"Failed with an exception: {e}"}
+            return {
+                "decision": "reject",
+                "reject_message": f"Failed with an exception: {e}",
+                "guardrail_response": {
+                    "include_in_response": True,
+                    "response": {"flagged": True, "label": "ERROR", "raw_output": str(e)}
+                }
+            }
 
 set_model(LlamaFirewallInputModel())
