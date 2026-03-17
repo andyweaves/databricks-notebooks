@@ -7,8 +7,9 @@
 -- MAGIC - Encrypts/decrypts all columns or a user-specified list of columns
 -- MAGIC - Works on tables, views, and temp views (i.e. DataFrames registered via `createOrReplaceTempView`)
 -- MAGIC - Optionally writes results to a target table, or returns a result set
+-- MAGIC - Generates a cryptographically random AES-256 key and stores it in Databricks Secrets (or use a pre-existing secret)
 -- MAGIC - Uses `secret()` to retrieve the AES key from Databricks Secrets
--- MAGIC - Pure SQL — no Python required (callable from both SQL and PySpark)
+-- MAGIC - Pure SQL procedures — callable from both SQL and PySpark
 
 -- COMMAND ----------
 
@@ -30,7 +31,44 @@ USE SCHEMA IDENTIFIER(:schema);
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 2: Generate some fake PII data to demonstrate with
+-- MAGIC ## Step 2: Generate an AES-256 key and store it as a Databricks Secret
+-- MAGIC
+-- MAGIC This generates a cryptographically random 256-bit AES key and stores it in the specified Databricks secret scope. The key is base64-encoded for safe storage as a string secret, and decoded back to binary at encrypt/decrypt time using `unbase64()`.
+-- MAGIC
+-- MAGIC > **Note:** The SQL `secret()` function always returns a STRING, so raw binary keys cannot be stored directly. Base64 encoding bridges this gap — the procedures use `unbase64(secret(...))` to recover the true binary key.
+-- MAGIC
+-- MAGIC If you already have a key in your secret scope, you can skip this step.
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC from databricks.sdk import WorkspaceClient
+-- MAGIC from base64 import b64encode
+-- MAGIC from os import urandom
+-- MAGIC
+-- MAGIC secret_scope = dbutils.widgets.get("secret_scope")
+-- MAGIC secret_key = dbutils.widgets.get("secret_key")
+-- MAGIC
+-- MAGIC # Generate a cryptographically random 256-bit (32-byte) AES key, base64-encoded for storage
+-- MAGIC aes_key_b64 = b64encode(urandom(32)).decode("utf-8")
+-- MAGIC
+-- MAGIC w = WorkspaceClient()
+-- MAGIC
+-- MAGIC # Create the secret scope if it doesn't already exist
+-- MAGIC try:
+-- MAGIC     w.secrets.create_scope(scope=secret_scope)
+-- MAGIC     print(f"Created secret scope: {secret_scope}")
+-- MAGIC except Exception as e:
+-- MAGIC     print(f"Scope already exists or could not be created: {e}")
+-- MAGIC
+-- MAGIC # Store the base64-encoded key as a string secret
+-- MAGIC w.secrets.put_secret(scope=secret_scope, key=secret_key, string_value=aes_key_b64)
+-- MAGIC print(f"Stored AES-256 key in secret '{secret_scope}/{secret_key}'")
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ## Step 3: Generate some fake PII data to demonstrate with
 
 -- COMMAND ----------
 
@@ -62,7 +100,7 @@ SELECT * FROM fake_pii_raw
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 3: Create the `aes_encrypt_table` stored procedure
+-- MAGIC ## Step 4: Create the `aes_encrypt_table` stored procedure
 -- MAGIC
 -- MAGIC **Parameters:**
 -- MAGIC | Parameter | Type | Description |
@@ -121,7 +159,7 @@ BEGIN
       SET select_expr = select_expr || ', ';
     END IF;
     IF (array_contains(encrypt_cols, col_name)) THEN
-      SET select_expr = select_expr || 'base64(aes_encrypt(CAST(' || col_name || ' AS STRING), secret(' || quote(secret_scope) || ', ' || quote(secret_key) || '), \'GCM\', \'DEFAULT\')) AS ' || col_name;
+      SET select_expr = select_expr || 'base64(aes_encrypt(CAST(' || col_name || ' AS STRING), unbase64(secret(' || quote(secret_scope) || ', ' || quote(secret_key) || ')), \'GCM\', \'DEFAULT\')) AS ' || col_name;
     ELSE
       SET select_expr = select_expr || col_name;
     END IF;
@@ -139,7 +177,7 @@ END;
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 4: Create the `aes_decrypt_table` stored procedure
+-- MAGIC ## Step 5: Create the `aes_decrypt_table` stored procedure
 -- MAGIC
 -- MAGIC **Parameters:**
 -- MAGIC | Parameter | Type | Description |
@@ -197,7 +235,7 @@ BEGIN
       SET select_expr = select_expr || ', ';
     END IF;
     IF (array_contains(decrypt_cols, col_name)) THEN
-      SET select_expr = select_expr || 'CAST(aes_decrypt(unbase64(' || col_name || '), secret(' || quote(secret_scope) || ', ' || quote(secret_key) || '), \'GCM\', \'DEFAULT\') AS STRING) AS ' || col_name;
+      SET select_expr = select_expr || 'CAST(aes_decrypt(unbase64(' || col_name || '), unbase64(secret(' || quote(secret_scope) || ', ' || quote(secret_key) || ')), \'GCM\', \'DEFAULT\') AS STRING) AS ' || col_name;
     ELSE
       SET select_expr = select_expr || col_name;
     END IF;
@@ -215,7 +253,7 @@ END;
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 5: Encrypt all columns of a table
+-- MAGIC ## Step 6: Encrypt all columns of a table
 
 -- COMMAND ----------
 
@@ -235,7 +273,7 @@ SELECT * FROM fake_pii_encrypted
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 6: Decrypt all columns back and verify round-trip
+-- MAGIC ## Step 7: Decrypt all columns back and verify round-trip
 
 -- COMMAND ----------
 
@@ -248,7 +286,7 @@ CALL aes_decrypt_table(
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 7: Encrypt only specific columns
+-- MAGIC ## Step 8: Encrypt only specific columns
 
 -- COMMAND ----------
 
@@ -278,7 +316,7 @@ CALL aes_decrypt_table(
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 8: Use with a DataFrame (temp view)
+-- MAGIC ## Step 9: Use with a DataFrame (temp view)
 
 -- COMMAND ----------
 
@@ -294,7 +332,7 @@ CALL aes_encrypt_table(
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 9: Call from PySpark
+-- MAGIC ## Step 10: Call from PySpark
 -- MAGIC
 -- MAGIC The procedures are equally callable from PySpark using `spark.sql()`:
 -- MAGIC
