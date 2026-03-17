@@ -302,12 +302,12 @@ print(f"Model saved to: {model_path}")
 # MAGIC
 # MAGIC         result = self.firewall.scan(UserMessage(content=text))
 # MAGIC
-# MAGIC         flagged = result.action.value != "allow"
+# MAGIC         flagged = result.decision.value != "allow"
 # MAGIC
 # MAGIC         return {
 # MAGIC             "flagged": flagged,
 # MAGIC             "label": "MALICIOUS" if flagged else "SAFE",
-# MAGIC             "action": result.action.value,
+# MAGIC             "action": result.decision.value,
 # MAGIC             "reason": str(result.reason) if result.reason else None,
 # MAGIC             "raw_output": str(result)
 # MAGIC         }
@@ -552,7 +552,7 @@ print(f"Model saved to: {model_path}")
 # MAGIC
 # MAGIC         result = self.firewall.scan(AssistantMessage(content=code_content))
 # MAGIC
-# MAGIC         action = result.action.value
+# MAGIC         action = result.decision.value
 # MAGIC         flagged = action != "allow"
 # MAGIC
 # MAGIC         return {

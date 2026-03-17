@@ -87,12 +87,12 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
 
         result = self.firewall.scan(UserMessage(content=text))
 
-        flagged = result.action.value != "allow"
+        flagged = result.decision.value != "allow"
 
         return {
             "flagged": flagged,
             "label": "MALICIOUS" if flagged else "SAFE",
-            "action": result.action.value,
+            "action": result.decision.value,
             "reason": str(result.reason) if result.reason else None,
             "raw_output": str(result)
         }

@@ -39,7 +39,7 @@ class LlamaFirewallOutputModel(mlflow.pyfunc.PythonModel):
 
         result = self.firewall.scan(AssistantMessage(content=code_content))
 
-        action = result.action.value
+        action = result.decision.value
         flagged = action != "allow"
 
         return {
