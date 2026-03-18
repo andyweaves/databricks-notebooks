@@ -42,6 +42,9 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
         from transformers import AutoConfig, AutoProcessor, Llama4ForConditionalGeneration
         import torch
 
+        # Point HF cache to bundled PromptGuard model so it loads offline
+        os.environ["HF_HUB_CACHE"] = context.artifacts["prompt_guard_cache"]
+
         # Initialize LlamaFirewall with PromptGuard scanner
         self.firewall = LlamaFirewall(
             scanners={Role.USER: [ScannerType.PROMPT_GUARD]}

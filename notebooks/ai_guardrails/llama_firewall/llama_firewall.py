@@ -207,6 +207,17 @@ processor.save_pretrained(model_path)
 
 print(f"Model saved to: {model_path}")
 
+# Save PromptGuard model for offline use in serving
+from huggingface_hub import snapshot_download
+
+prompt_guard_cache = os.path.join(temp_dir, "prompt_guard_cache")
+snapshot_download(
+    "meta-llama/Llama-Prompt-Guard-2-86M",
+    cache_dir=prompt_guard_cache,
+    token=hf_token
+)
+print(f"PromptGuard cache saved to: {prompt_guard_cache}")
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -259,6 +270,9 @@ print(f"Model saved to: {model_path}")
 # MAGIC         from llamafirewall import LlamaFirewall, ScannerType, Role
 # MAGIC         from transformers import AutoConfig, AutoProcessor, Llama4ForConditionalGeneration
 # MAGIC         import torch
+# MAGIC
+# MAGIC         # Point HF cache to bundled PromptGuard model so it loads offline
+# MAGIC         os.environ["HF_HUB_CACHE"] = context.artifacts["prompt_guard_cache"]
 # MAGIC
 # MAGIC         # Initialize LlamaFirewall with PromptGuard scanner
 # MAGIC         self.firewall = LlamaFirewall(
@@ -700,7 +714,8 @@ with mlflow.start_run():
         name=input_endpoint,
         python_model=input_pyfunc_path,
         artifacts={
-            "model_files": model_path
+            "model_files": model_path,
+            "prompt_guard_cache": prompt_guard_cache
         },
         metadata={
             "task": "llm/v1/chat",
