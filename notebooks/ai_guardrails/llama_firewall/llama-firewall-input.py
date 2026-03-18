@@ -127,7 +127,8 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
             outputs = self.lg4_model.generate(
                 **inputs,
                 do_sample=False,
-                max_new_tokens=100
+                max_new_tokens=100,
+                cache_implementation="dynamic"
             )
 
         result = self.lg4_processor.batch_decode(

@@ -28,7 +28,7 @@
 # COMMAND ----------
 
 !pip install mlflow==3.8.1
-!pip install llamafirewall
+!pip install llamafirewall semgrep
 !pip install transformers==4.57.6
 !pip install torch==2.9.1
 !pip install torchvision==0.24.1
@@ -84,9 +84,12 @@ os.environ["TOKENIZERS_PARALLELISM"] = "true"
 from llamafirewall import LlamaFirewall, ScannerType, Role, UserMessage, AssistantMessage
 import nest_asyncio
 import logging
+import warnings
 
 nest_asyncio.apply()
 logging.getLogger("transformers").setLevel(logging.ERROR)
+warnings.filterwarnings("ignore", message=".*pynvml.*")
+warnings.filterwarnings("ignore", message=".*incorrect regex pattern.*")
 
 results = []
 
@@ -342,7 +345,8 @@ print(f"Model saved to: {model_path}")
 # MAGIC             outputs = self.lg4_model.generate(
 # MAGIC                 **inputs,
 # MAGIC                 do_sample=False,
-# MAGIC                 max_new_tokens=100
+# MAGIC                 max_new_tokens=100,
+# MAGIC                 cache_implementation="dynamic"
 # MAGIC             )
 # MAGIC
 # MAGIC         result = self.lg4_processor.batch_decode(
