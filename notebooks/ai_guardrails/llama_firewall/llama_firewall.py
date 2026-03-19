@@ -207,16 +207,22 @@ processor.save_pretrained(model_path)
 
 print(f"Model saved to: {model_path}")
 
-# Save PromptGuard model for offline use in serving
-from huggingface_hub import snapshot_download
+# Save PromptGuard model for offline use in serving.
+# LlamaFirewall expects the model at $HF_HOME/meta-llama--Llama-Prompt-Guard-2-86M,
+# so we replicate that exact directory structure for bundling as an MLflow artifact.
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-prompt_guard_cache = os.path.join(temp_dir, "prompt_guard_cache")
-snapshot_download(
-    "meta-llama/Llama-Prompt-Guard-2-86M",
-    cache_dir=prompt_guard_cache,
-    token=hf_token
-)
-print(f"PromptGuard cache saved to: {prompt_guard_cache}")
+prompt_guard_home = os.path.join(temp_dir, "prompt_guard_home")
+prompt_guard_model_dir = os.path.join(prompt_guard_home, "meta-llama--Llama-Prompt-Guard-2-86M")
+os.makedirs(prompt_guard_model_dir, exist_ok=True)
+
+pg_model = AutoModelForSequenceClassification.from_pretrained("meta-llama/Llama-Prompt-Guard-2-86M", token=hf_token)
+pg_tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-Prompt-Guard-2-86M", token=hf_token)
+pg_model.save_pretrained(prompt_guard_model_dir)
+pg_tokenizer.save_pretrained(prompt_guard_model_dir)
+del pg_model, pg_tokenizer
+
+print(f"PromptGuard saved to: {prompt_guard_model_dir}")
 
 # COMMAND ----------
 
@@ -271,8 +277,9 @@ print(f"PromptGuard cache saved to: {prompt_guard_cache}")
 # MAGIC         from transformers import AutoConfig, AutoProcessor, Llama4ForConditionalGeneration
 # MAGIC         import torch
 # MAGIC
-# MAGIC         # Point HF cache to bundled PromptGuard model so it loads offline
-# MAGIC         os.environ["HF_HUB_CACHE"] = context.artifacts["prompt_guard_cache"]
+# MAGIC         # Point HF_HOME to bundled PromptGuard model directory so LlamaFirewall
+# MAGIC         # finds it at $HF_HOME/meta-llama--Llama-Prompt-Guard-2-86M without downloading
+# MAGIC         os.environ["HF_HOME"] = context.artifacts["prompt_guard_home"]
 # MAGIC
 # MAGIC         # Initialize LlamaFirewall with PromptGuard scanner
 # MAGIC         self.firewall = LlamaFirewall(
@@ -715,7 +722,7 @@ with mlflow.start_run():
         python_model=input_pyfunc_path,
         artifacts={
             "model_files": model_path,
-            "prompt_guard_cache": prompt_guard_cache
+            "prompt_guard_home": prompt_guard_home
         },
         metadata={
             "task": "llm/v1/chat",
