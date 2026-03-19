@@ -80,15 +80,15 @@ class LlamaFirewallOutputModel(mlflow.pyfunc.PythonModel):
                 return {
                     "decision": "reject",
                     "reject_message": (
-                        f"The generated code has been flagged as insecure by AI guardrails. "
-                        f"Reason: {scan_result['reason']}"
+                        f"🚫🚫🚫 The generated code has been flagged as insecure by AI guardrails. 🚫🚫🚫 "
+                        f"Detected Categories: {scan_result['reason']}"
                     )
                 }
             else:
                 # warn or other non-allow actions — sanitize
                 warning_message = (
-                    "WARNING: The generated code has been flagged as having potential "
-                    "security issues by AI guardrails. Please review carefully before use."
+                    "⚠️⚠️⚠️ The generated code has been flagged as having potential "
+                    "security issues by AI guardrails. Please review carefully before use. ⚠️⚠️⚠️"
                 )
                 return {
                     "decision": "sanitize",

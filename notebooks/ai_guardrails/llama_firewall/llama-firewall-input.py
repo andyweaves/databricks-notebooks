@@ -221,15 +221,15 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
         if flagged:
             reasons = []
             if pg_result["flagged"]:
-                reasons.append(f"PromptGuard: {pg_result['label']} (action: {pg_result['action']})")
+                reasons.append(f"{pg_result['label']} (action: {pg_result['action']})")
             if lg4_result["flagged"]:
                 categories_str = ", ".join(lg4_result["category_names"]) if lg4_result["category_names"] else "Unknown"
                 category_codes = ", ".join(lg4_result["categories"]) if lg4_result["categories"] else "Unknown"
-                reasons.append(f"Llama Guard 4: {categories_str} ({category_codes})")
+                reasons.append(f"{categories_str} ({category_codes})")
 
             reject_message = (
-                f"Your request has been flagged by AI guardrails as potentially harmful. "
-                f"Detected by: {'; '.join(reasons)}"
+                f"🚫🚫🚫 Your request has been flagged by AI guardrails as potentially harmful. 🚫🚫🚫 "
+                f"Detected Categories: {'; '.join(reasons)}"
             )
 
             return {

@@ -456,15 +456,15 @@ print(f"PromptGuard saved to: {prompt_guard_model_dir}")
 # MAGIC         if flagged:
 # MAGIC             reasons = []
 # MAGIC             if pg_result["flagged"]:
-# MAGIC                 reasons.append(f"PromptGuard: {pg_result['label']} (action: {pg_result['action']})")
+# MAGIC                 reasons.append(f"{pg_result['label']} (action: {pg_result['action']})")
 # MAGIC             if lg4_result["flagged"]:
 # MAGIC                 categories_str = ", ".join(lg4_result["category_names"]) if lg4_result["category_names"] else "Unknown"
 # MAGIC                 category_codes = ", ".join(lg4_result["categories"]) if lg4_result["categories"] else "Unknown"
-# MAGIC                 reasons.append(f"Llama Guard 4: {categories_str} ({category_codes})")
+# MAGIC                 reasons.append(f"{categories_str} ({category_codes})")
 # MAGIC
 # MAGIC             reject_message = (
-# MAGIC                 f"Your request has been flagged by AI guardrails as potentially harmful. "
-# MAGIC                 f"Detected by: {'; '.join(reasons)}"
+# MAGIC                 f"🚫🚫🚫 Your request has been flagged by AI guardrails as potentially harmful. 🚫🚫🚫 "
+# MAGIC                 f"Detected Categories: {'; '.join(reasons)}"
 # MAGIC             )
 # MAGIC
 # MAGIC             return {
@@ -621,15 +621,15 @@ print(f"PromptGuard saved to: {prompt_guard_model_dir}")
 # MAGIC                 return {
 # MAGIC                     "decision": "reject",
 # MAGIC                     "reject_message": (
-# MAGIC                         f"The generated code has been flagged as insecure by AI guardrails. "
-# MAGIC                         f"Reason: {scan_result['reason']}"
+# MAGIC                         f"🚫🚫🚫 The generated code has been flagged as insecure by AI guardrails. 🚫🚫🚫 "
+# MAGIC                         f"Detected Categories: {scan_result['reason']}"
 # MAGIC                     )
 # MAGIC                 }
 # MAGIC             else:
 # MAGIC                 # warn or other non-allow actions — sanitize
 # MAGIC                 warning_message = (
-# MAGIC                     "WARNING: The generated code has been flagged as having potential "
-# MAGIC                     "security issues by AI guardrails. Please review carefully before use."
+# MAGIC                     "⚠️⚠️⚠️ The generated code has been flagged as having potential "
+# MAGIC                     "security issues by AI guardrails. Please review carefully before use. ⚠️⚠️⚠️"
 # MAGIC                 )
 # MAGIC                 return {
 # MAGIC                     "decision": "sanitize",
@@ -703,7 +703,7 @@ input_example = {
 
 input_output_example = {
     "decision": "reject",
-    "reject_message": "Your request has been flagged by AI guardrails as potentially harmful. Detected by: PromptGuard: MALICIOUS (action: block)",
+    "reject_message": "🚫🚫🚫 Your request has been flagged by AI guardrails as potentially harmful. 🚫🚫🚫 Detected Categories: MALICIOUS (action: block)",
     "guardrail_response": {
         "include_in_response": True,
         "response": {
