@@ -277,6 +277,9 @@ print(f"PromptGuard saved to: {prompt_guard_model_dir}")
 # MAGIC         from transformers import AutoConfig, AutoProcessor, Llama4ForConditionalGeneration
 # MAGIC         import torch
 # MAGIC
+# MAGIC         import warnings
+# MAGIC         warnings.filterwarnings("ignore", message=".*incorrect regex pattern.*")
+# MAGIC
 # MAGIC         # Point HF_HOME to bundled PromptGuard model directory so LlamaFirewall
 # MAGIC         # finds it at $HF_HOME/meta-llama--Llama-Prompt-Guard-2-86M without downloading
 # MAGIC         os.environ["HF_HOME"] = context.artifacts["prompt_guard_home"]
