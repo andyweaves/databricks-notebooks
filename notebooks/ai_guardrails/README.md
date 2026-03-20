@@ -11,7 +11,7 @@ Each guardrail is packaged as an MLflow pyfunc model, registered in Unity Catalo
 | `llama_guard/` | Content safety classification using Meta Llama Guard 3 (1B/8B) and Llama Guard 4 (12B). Deployed as **input** guardrails to block harmful prompts across 14 safety categories. |
 | `prompt_guard/` | Prompt injection and jailbreak detection using Meta Prompt Guard 2 (22M/86M). Deployed as **input** guardrails to detect malicious prompt manipulation. |
 | `code_shield/` | Code vulnerability scanning using Meta Code Shield. Deployed as an **output** guardrail to catch insecure LLM-generated code across 7 programming languages. |
-| `llama_firewall/` | Unified guardrail framework using Meta's LlamaFirewall. Deploys PromptGuard, CodeShield, and AlignmentCheck (agent chain-of-thought auditing) through a single policy engine. Comparative alternative to the standalone guardrails above. |
+| `llama_firewall/` | Unified guardrail framework using Meta's LlamaFirewall. Deploys PromptGuard + Llama Guard 4 as a combined **input** guardrail and CodeShield as an **output** guardrail through a single policy engine. Consolidates the standalone guardrails above into fewer endpoints. |
 | `red_team/` | Red teaming toolkit using BlackIce and Garak to probe deployed models for weaknesses, plus Databricks SQL alert definitions for monitoring guardrail activity. |
 
 ## File Naming Convention
