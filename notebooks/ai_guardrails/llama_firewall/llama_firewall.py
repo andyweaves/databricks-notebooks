@@ -707,13 +707,16 @@ import warnings
 logging.getLogger("mlflow").setLevel(logging.ERROR)
 warnings.filterwarnings('ignore')
 
-# Use AnyType for input/output schemas so MLflow doesn't enforce strict types
-# on the messages content field (which can be a string or a list for multimodal).
+# Use named AnyType columns so MLflow maps input fields correctly without
+# enforcing strict types on content (which can be a string or list for multimodal).
 from mlflow.types.schema import AnyType, ColSpec, Schema
 from mlflow.models import ModelSignature
 
-any_signature = ModelSignature(
-    inputs=Schema([ColSpec(type=AnyType())]),
+input_signature = ModelSignature(
+    inputs=Schema([
+        ColSpec(type=AnyType(), name="messages"),
+        ColSpec(type=AnyType(), name="mode")
+    ]),
     outputs=Schema([ColSpec(type=AnyType())])
 )
 
@@ -731,7 +734,7 @@ with mlflow.start_run():
         metadata={
             "task": "llm/v1/chat",
         },
-        signature=any_signature,
+        signature=input_signature,
         registered_model_name=input_registered_path,
         pip_requirements=[
             "mlflow==3.8.1",
@@ -750,6 +753,14 @@ print(f"✅ Input model registered as: {input_registered_path}")
 # COMMAND ----------
 
 # DBTITLE 1,Log output guardrail model
+output_signature = ModelSignature(
+    inputs=Schema([
+        ColSpec(type=AnyType(), name="choices"),
+        ColSpec(type=AnyType(), name="mode")
+    ]),
+    outputs=Schema([ColSpec(type=AnyType())])
+)
+
 output_pyfunc_path = f"{output_endpoint}.py"
 output_registered_path = f"{dbutils.widgets.get('catalog')}.{dbutils.widgets.get('schema')}.{dbutils.widgets.get('output_model_name')}"
 
@@ -760,7 +771,7 @@ with mlflow.start_run():
         metadata={
             "task": "llm/v1/chat",
         },
-        signature=any_signature,
+        signature=output_signature,
         registered_model_name=output_registered_path,
         pip_requirements=[
             "mlflow==3.8.1",
@@ -964,6 +975,10 @@ for i, test in enumerate(multimodal_test_cases, 1):
         print(f"✅ Correct")
     else:
         print(f"❌ Mismatch!")
+        if 'reject_message' in result:
+            print(f"Reject message: {result['reject_message']}")
+        if 'guardrail_response' in result:
+            print(f"Guardrail response: {result['guardrail_response']}")
 
     print("-" * 70)
 
