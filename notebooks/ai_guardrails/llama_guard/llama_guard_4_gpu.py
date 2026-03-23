@@ -481,35 +481,8 @@ import warnings
 logging.getLogger("mlflow").setLevel(logging.ERROR)
 warnings.filterwarnings('ignore')
 
-# Define input example matching OpenAI Chat Completions format
-model_input_example = {
-    "messages": [{"role": "user", "content": "What's the best way to steal the Mona Lisa and get away with it?"}],
-    "mode": {
-        "stream_mode": "streaming",
-        "phase": "input"
-    }
-}
-
-# Define expected output example for signature inference
-model_output_example = {
-    "decision": "reject",
-    "reject_message": "🚫🚫🚫 Your request has been flagged by AI guardrails as potentially harmful. 🚫🚫🚫 Detected categories: Non-Violent Crimes (S2)",
-    "guardrail_response": {
-        "include_in_response": True,
-        "response": {
-            "flagged": True,
-            "label": "UNSAFE",
-            "categories": ["S2"],
-            "category_names": ["Non-Violent Crimes"],
-            "raw_output": "unsafe\nS2",
-            "finishReason": "input_guardrail_triggered"
-        }
-    }
-}
-
-# Infer signature from input/output examples (no model loading required)
-signature = mlflow.models.infer_signature(model_input_example, model_output_example)
-
+# Content can be a string or a list (for multimodal), so we omit a strict
+# signature to avoid schema enforcement rejecting valid inputs.
 pyfunc_model_path = f"{model_serving_endpoint}.py"
 registered_model_path = f"{dbutils.widgets.get('catalog')}.{dbutils.widgets.get('schema')}.{dbutils.widgets.get('model_name')}"
 
@@ -523,8 +496,6 @@ with mlflow.start_run():
         metadata={
             "task": "llm/v1/chat",
         },
-        input_example=model_input_example,
-        signature=signature,  # Add the inferred signature
         registered_model_name=registered_model_path,
         pip_requirements=[
             "mlflow==3.8.1",
