@@ -553,6 +553,8 @@ if torch.cuda.is_available():
 # COMMAND ----------
 
 # DBTITLE 1,Test Multiple Unsafe Scenarios
+import pandas as pd
+
 # Load the model
 loaded_model = mlflow.pyfunc.load_model(model_info.model_uri)
 
@@ -609,7 +611,7 @@ for i, test in enumerate(test_cases, 1):
         "messages": [{"role": "user", "content": test["content"]}]
     }
     
-    result = loaded_model.predict(test_input)
+    result = loaded_model.predict(pd.DataFrame([test_input]))
     
     print(f"\nTest {i}: {test['name']}")
     print(f"Input: \"{test['content'][:60]}...\"" if len(test['content']) > 60 else f"Input: \"{test['content']}\"")
@@ -698,7 +700,7 @@ for i, test in enumerate(multimodal_test_cases, 1):
         "messages": test["messages"]
     }
 
-    result = loaded_model.predict(test_input)
+    result = loaded_model.predict(pd.DataFrame([test_input]))
 
     # Summarize content for display
     content = test["messages"][0]["content"]

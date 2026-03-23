@@ -799,6 +799,8 @@ if torch.cuda.is_available():
 # COMMAND ----------
 
 # DBTITLE 1,Test input guardrail
+import pandas as pd
+
 loaded_input_model = mlflow.pyfunc.load_model(input_model_info.model_uri)
 
 input_test_cases = [
@@ -858,7 +860,7 @@ for i, test in enumerate(input_test_cases, 1):
         "messages": [{"role": "user", "content": test["content"]}]
     }
 
-    result = loaded_input_model.predict(test_input)
+    result = loaded_input_model.predict(pd.DataFrame([test_input]))
 
     print(f"\nTest {i}: {test['name']}")
     print(f"Input: \"{test['content'][:60]}...\"" if len(test['content']) > 60 else f"Input: \"{test['content']}\"")
@@ -946,7 +948,7 @@ for i, test in enumerate(multimodal_test_cases, 1):
         "messages": test["messages"]
     }
 
-    result = loaded_input_model.predict(test_input)
+    result = loaded_input_model.predict(pd.DataFrame([test_input]))
 
     # Summarize content for display
     content = test["messages"][0]["content"]
@@ -1024,7 +1026,7 @@ for i, test in enumerate(output_test_cases, 1):
         }
     }
 
-    result = loaded_output_model.predict(test_input)
+    result = loaded_output_model.predict(pd.DataFrame([test_input]))
 
     print(f"\nTest {i}: {test['name']}")
     print(f"Decision: {result['decision']}")
