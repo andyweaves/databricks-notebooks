@@ -79,24 +79,43 @@ class LlamaGuard4Model(mlflow.pyfunc.PythonModel):
                 return category
         return "Unknown"
 
-    def _invoke_guardrail(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _format_llama_guard_input(self, messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
         """
-        Invokes Llama Guard 4 model to detect harmful content (text and/or images).
-
-        Messages should have content in LG4 format — a list of content items:
-          [{"type": "text", "text": "..."}, {"type": "image", "url": "..."}]
-
+        Format input for Llama Guard 4 using the processor's chat template.
+        
         Args:
-            messages: List of message dictionaries with 'role' and 'content' (list of content items)
+            messages: List of message dictionaries with 'role' and 'content'
+            
+        Returns:
+            Formatted messages for Llama Guard 4
+        """
+        # Convert messages to the format expected by Llama Guard 4
+        formatted_messages = []
+        for msg in messages:
+            formatted_messages.append({
+                "role": msg["role"],
+                "content": [{"type": "text", "text": msg["content"]}]
+            })
+        return formatted_messages
 
+    def _invoke_guardrail(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+        """ 
+        Invokes Llama Guard 4 model to detect harmful content.
+        
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            
         Returns:
             Dict with 'flagged' (bool), 'label' (str), and 'categories' (list) keys
         """
         import torch
-
+        
+        # Format input for Llama Guard 4
+        formatted_messages = self._format_llama_guard_input(messages)
+        
         # Use processor to apply chat template and tokenize
         inputs = self.processor.apply_chat_template(
-            messages,
+            formatted_messages,
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
@@ -152,24 +171,21 @@ class LlamaGuard4Model(mlflow.pyfunc.PythonModel):
             "raw_output": result
         }
     
-    def _translate_input_guardrail_request(self, request: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _translate_input_guardrail_request(self, request: Dict[str, Any]) -> List[Dict[str, str]]:
         """
         Translates an OpenAI Chat Completions (ChatV1) request to Llama Guard 4 format.
-
-        Handles both text-only and multimodal (image + text) messages.
-        OpenAI image_url format is translated to Llama Guard 4's expected format.
-
+        
         Args:
             request: Guardrail request dictionary
-
+            
         Returns:
-            List of message dictionaries for Llama Guard 4 with content as list of items
+            List of message dictionaries for Llama Guard 4
         """
         if (request["mode"]["phase"] != "input") or (request["mode"]["stream_mode"] is None):
             raise Exception(f"Invalid mode: {request}.")
         if ("messages" not in request):
             raise Exception(f"Missing key \"messages\" in request: {request}.")
-
+        
         messages = request["messages"]
         formatted_messages = []
 
@@ -179,29 +195,23 @@ class LlamaGuard4Model(mlflow.pyfunc.PythonModel):
 
             content = message["content"]
             role = message.get("role", "user")
-
+            
             if isinstance(content, str):
-                formatted_messages.append({
-                    "role": role,
-                    "content": [{"type": "text", "text": content}]
-                })
+                formatted_messages.append({"role": role, "content": content})
             elif isinstance(content, list):
-                lg4_content = []
+                # Combine text content from list
+                text_parts = []
                 for item in content:
                     if item.get("type") == "text":
-                        lg4_content.append({"type": "text", "text": item["text"]})
-                    elif item.get("type") == "image_url":
-                        # Translate OpenAI image_url format to LG4 image format
-                        url = item["image_url"]["url"]
-                        lg4_content.append({"type": "image", "url": url})
-                    elif item.get("type") == "image":
-                        # Already in LG4 format
-                        lg4_content.append(item)
-                if lg4_content:
-                    formatted_messages.append({"role": role, "content": lg4_content})
+                        text_parts.append(item["text"])
+                if text_parts:
+                    formatted_messages.append({
+                        "role": role,
+                        "content": " ".join(text_parts)
+                    })
             else:
                 raise Exception(f"Invalid value type for \"content\": {request}")
-
+        
         return formatted_messages
     
     def _translate_guardrail_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
