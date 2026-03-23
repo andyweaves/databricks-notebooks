@@ -707,8 +707,16 @@ import warnings
 logging.getLogger("mlflow").setLevel(logging.ERROR)
 warnings.filterwarnings('ignore')
 
-# Input model example — content can be a string or a list (for multimodal),
-# so we omit a strict signature to avoid schema enforcement rejecting valid inputs.
+# Use AnyType for input/output schemas so MLflow doesn't enforce strict types
+# on the messages content field (which can be a string or a list for multimodal).
+from mlflow.types.schema import AnyType, ColSpec, Schema
+from mlflow.models import ModelSignature
+
+any_signature = ModelSignature(
+    inputs=Schema([ColSpec(type=AnyType())]),
+    outputs=Schema([ColSpec(type=AnyType())])
+)
+
 input_pyfunc_path = f"{input_endpoint}.py"
 input_registered_path = f"{dbutils.widgets.get('catalog')}.{dbutils.widgets.get('schema')}.{dbutils.widgets.get('input_model_name')}"
 
@@ -723,6 +731,7 @@ with mlflow.start_run():
         metadata={
             "task": "llm/v1/chat",
         },
+        signature=any_signature,
         registered_model_name=input_registered_path,
         pip_requirements=[
             "mlflow==3.8.1",
@@ -741,27 +750,6 @@ print(f"✅ Input model registered as: {input_registered_path}")
 # COMMAND ----------
 
 # DBTITLE 1,Log output guardrail model
-# Output model example
-output_example = {
-    "choices": [
-        {
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "def hash_password(password):\n    return hashlib.md5(password.encode()).hexdigest()",
-                "refusal": None,
-                "annotations": [],
-            },
-            "logprobs": None,
-            "finish_reason": "stop",
-        }
-    ],
-    "mode": {
-        "phase": "output",
-        "stream_mode": "non_streaming"
-    }
-}
-
 output_pyfunc_path = f"{output_endpoint}.py"
 output_registered_path = f"{dbutils.widgets.get('catalog')}.{dbutils.widgets.get('schema')}.{dbutils.widgets.get('output_model_name')}"
 
@@ -772,7 +760,7 @@ with mlflow.start_run():
         metadata={
             "task": "llm/v1/chat",
         },
-        input_example=output_example,
+        signature=any_signature,
         registered_model_name=output_registered_path,
         pip_requirements=[
             "mlflow==3.8.1",

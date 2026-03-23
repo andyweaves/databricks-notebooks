@@ -481,8 +481,16 @@ import warnings
 logging.getLogger("mlflow").setLevel(logging.ERROR)
 warnings.filterwarnings('ignore')
 
-# Content can be a string or a list (for multimodal), so we omit a strict
-# signature to avoid schema enforcement rejecting valid inputs.
+# Use AnyType for input/output schemas so MLflow doesn't enforce strict types
+# on the messages content field (which can be a string or a list for multimodal).
+from mlflow.types.schema import AnyType, ColSpec, Schema
+from mlflow.models import ModelSignature
+
+any_signature = ModelSignature(
+    inputs=Schema([ColSpec(type=AnyType())]),
+    outputs=Schema([ColSpec(type=AnyType())])
+)
+
 pyfunc_model_path = f"{model_serving_endpoint}.py"
 registered_model_path = f"{dbutils.widgets.get('catalog')}.{dbutils.widgets.get('schema')}.{dbutils.widgets.get('model_name')}"
 
@@ -496,6 +504,7 @@ with mlflow.start_run():
         metadata={
             "task": "llm/v1/chat",
         },
+        signature=any_signature,
         registered_model_name=registered_model_path,
         pip_requirements=[
             "mlflow==3.8.1",
