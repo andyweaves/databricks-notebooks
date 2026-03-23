@@ -104,9 +104,12 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
             "raw_output": str(result)
         }
 
-    def _invoke_llama_guard_4(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+    def _invoke_llama_guard_4(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Invoke Llama Guard 4 to detect harmful content.
+        Invoke Llama Guard 4 to detect harmful content (text and/or images).
+
+        Messages should have content in LG4 format — a list of content items:
+          [{"type": "text", "text": "..."}, {"type": "image", "url": "..."}]
 
         Returns:
             Dict with 'flagged' (bool), 'label' (str), 'categories' (list),
@@ -114,16 +117,8 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
         """
         import torch
 
-        # Format messages for Llama Guard 4
-        formatted_messages = []
-        for msg in messages:
-            formatted_messages.append({
-                "role": msg["role"],
-                "content": [{"type": "text", "text": msg["content"]}]
-            })
-
         inputs = self.lg4_processor.apply_chat_template(
-            formatted_messages,
+            messages,
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
@@ -175,6 +170,9 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
         """
         Translates an OpenAI Chat Completions (ChatV1) request.
 
+        Handles both text-only and multimodal (image + text) messages.
+        OpenAI image_url format is translated to Llama Guard 4's expected format.
+
         Returns:
             Tuple of (text for PromptGuard, messages for Llama Guard 4)
         """
@@ -196,16 +194,28 @@ class LlamaFirewallInputModel(mlflow.pyfunc.PythonModel):
 
             if isinstance(content, str):
                 combined_text.append(content)
-                formatted_messages.append({"role": role, "content": content})
+                formatted_messages.append({
+                    "role": role,
+                    "content": [{"type": "text", "text": content}]
+                })
             elif isinstance(content, list):
                 text_parts = []
+                lg4_content = []
                 for item in content:
                     if item.get("type") == "text":
                         text_parts.append(item["text"])
+                        lg4_content.append({"type": "text", "text": item["text"]})
+                    elif item.get("type") == "image_url":
+                        # Translate OpenAI image_url format to LG4 image format
+                        url = item["image_url"]["url"]
+                        lg4_content.append({"type": "image", "url": url})
+                    elif item.get("type") == "image":
+                        # Already in LG4 format
+                        lg4_content.append(item)
                 if text_parts:
-                    joined = " ".join(text_parts)
-                    combined_text.append(joined)
-                    formatted_messages.append({"role": role, "content": joined})
+                    combined_text.append(" ".join(text_parts))
+                if lg4_content:
+                    formatted_messages.append({"role": role, "content": lg4_content})
             else:
                 raise Exception(f"Invalid value type for \"content\": {request}")
 
