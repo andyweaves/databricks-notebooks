@@ -57,10 +57,10 @@ dbutils.widgets.dropdown("rows_per_partition", defaultValue="10000", choices=[
 ALL_LOCALES = ["en_US", "en_GB", "de_DE", "fr_FR", "ja_JP", "zh_CN", "pt_BR", "es_MX"]
 dbutils.widgets.dropdown("locale", defaultValue="all", choices=["all"] + ALL_LOCALES)
 
-catalogs = [x.full_name for x in list(ws.catalogs.list())]
-dbutils.widgets.dropdown("catalog", defaultValue=catalogs[0], choices=catalogs)
+catalogs = sorted([x.full_name for x in list(ws.catalogs.list())])
+dbutils.widgets.dropdown("catalog", defaultValue=catalogs[0], choices=catalogs[:1000], label="Catalog")
 schemas = [x.name for x in list(ws.schemas.list(catalog_name=dbutils.widgets.get("catalog")))]
-dbutils.widgets.dropdown("schema", defaultValue=schemas[0], choices=schemas)
+dbutils.widgets.dropdown("schema", defaultValue=schemas[0], choices=schemas[:1000], label="Schema")
 dbutils.widgets.text("table_name", defaultValue=f"fake_pii_data_{int(datetime.now().timestamp())}")
 
 num_rows = int(dbutils.widgets.get("num_rows"))
