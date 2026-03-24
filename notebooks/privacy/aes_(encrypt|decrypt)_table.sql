@@ -29,7 +29,8 @@
 -- MAGIC schemas = [x.name for x in list(ws.schemas.list(catalog_name=dbutils.widgets.get("catalog")))]
 -- MAGIC dbutils.widgets.dropdown("schema", defaultValue=schemas[0], choices=schemas[:1000], label="Schema")
 -- MAGIC
--- MAGIC dbutils.widgets.text(name="secret_scope", defaultValue="", label="Secret Scope to use for DEK")
+-- MAGIC scopes = sorted([s.name for s in ws.secrets.list_scopes()])
+-- MAGIC dbutils.widgets.dropdown("secret_scope", defaultValue=scopes[0], choices=scopes, label="Secret Scope to use for DEK")
 -- MAGIC dbutils.widgets.text(name="secret_key", defaultValue="", label="Secret Key to use for DEK")
 -- MAGIC
 -- MAGIC catalog = dbutils.widgets.get("catalog")
