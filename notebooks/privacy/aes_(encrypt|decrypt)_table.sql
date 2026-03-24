@@ -34,6 +34,8 @@
 -- MAGIC
 -- MAGIC catalog = dbutils.widgets.get("catalog")
 -- MAGIC schema = dbutils.widgets.get("schema")
+-- MAGIC secret_scope = dbutils.widgets.get("secret_scope")
+-- MAGIC secret_key = dbutils.widgets.get("secret_key")
 
 -- COMMAND ----------
 
@@ -127,6 +129,14 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   DECLARE select_expr STRING;
 -- MAGIC   DECLARE all_cols ARRAY<STRING>;
 -- MAGIC   DECLARE encrypt_key STRING DEFAULT quote(secret_scope) || ', ' || quote(secret_key);
+-- MAGIC   DECLARE full_table_name STRING;
+-- MAGIC
+-- MAGIC   -- Resolve source_table to a fully qualified 3-level namespace
+-- MAGIC   SET full_table_name = CASE
+-- MAGIC     WHEN source_table NOT LIKE '%.%' THEN current_catalog() || '.' || current_schema() || '.' || source_table
+-- MAGIC     WHEN source_table NOT LIKE '%.%.%' THEN current_catalog() || '.' || source_table
+-- MAGIC     ELSE source_table
+-- MAGIC   END;
 -- MAGIC
 -- MAGIC   -- Build the SELECT expression in a single set-based query using string_agg
 -- MAGIC   SET select_expr = (
@@ -139,7 +149,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC       ', '
 -- MAGIC     ) WITHIN GROUP (ORDER BY ordinal_position)
 -- MAGIC     FROM system.information_schema.columns
--- MAGIC     WHERE concat_ws('.', table_catalog, table_schema, table_name) = source_table
+-- MAGIC     WHERE concat_ws('.', table_catalog, table_schema, table_name) = full_table_name
 -- MAGIC   );
 -- MAGIC
 -- MAGIC   -- Fallback for temp views (not in information_schema)
@@ -198,6 +208,14 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   DECLARE select_expr STRING;
 -- MAGIC   DECLARE all_cols ARRAY<STRING>;
 -- MAGIC   DECLARE decrypt_key STRING DEFAULT quote(secret_scope) || ', ' || quote(secret_key);
+-- MAGIC   DECLARE full_table_name STRING;
+-- MAGIC
+-- MAGIC   -- Resolve source_table to a fully qualified 3-level namespace
+-- MAGIC   SET full_table_name = CASE
+-- MAGIC     WHEN source_table NOT LIKE '%.%' THEN current_catalog() || '.' || current_schema() || '.' || source_table
+-- MAGIC     WHEN source_table NOT LIKE '%.%.%' THEN current_catalog() || '.' || source_table
+-- MAGIC     ELSE source_table
+-- MAGIC   END;
 -- MAGIC
 -- MAGIC   -- Build the SELECT expression in a single set-based query using string_agg
 -- MAGIC   SET select_expr = (
@@ -210,7 +228,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC       ', '
 -- MAGIC     ) WITHIN GROUP (ORDER BY ordinal_position)
 -- MAGIC     FROM system.information_schema.columns
--- MAGIC     WHERE concat_ws('.', table_catalog, table_schema, table_name) = source_table
+-- MAGIC     WHERE concat_ws('.', table_catalog, table_schema, table_name) = full_table_name
 -- MAGIC   );
 -- MAGIC
 -- MAGIC   -- Fallback for temp views (not in information_schema)
@@ -272,8 +290,9 @@ SELECT * FROM titanic_encrypted
 
 -- COMMAND ----------
 
+-- Using an unqualified table name — resolved via current_catalog() and current_schema()
 CALL aes_decrypt_table(
-  source_table => :catalog || '.' || :schema || '.titanic_encrypted',
+  source_table => 'titanic_encrypted',
   secret_scope => :secret_scope,
   secret_key => :secret_key
 );
@@ -313,29 +332,45 @@ CALL aes_decrypt_table(
 -- MAGIC %md
 -- MAGIC ## Step 9: Call from PySpark
 -- MAGIC
--- MAGIC The procedures are equally callable from PySpark using `spark.sql()`:
--- MAGIC
--- MAGIC ```python
--- MAGIC # Register any DataFrame as a temp view
--- MAGIC df.createOrReplaceTempView("my_data")
--- MAGIC
+-- MAGIC The procedures are equally callable from PySpark using `spark.sql()`.
+
+-- COMMAND ----------
+
+-- MAGIC %python
 -- MAGIC # Encrypt specific columns and return as a DataFrame
--- MAGIC encrypted_df = spark.sql("""
+-- MAGIC encrypted_df = spark.sql(f"""
 -- MAGIC   CALL aes_encrypt_table(
--- MAGIC     source_table => 'my_data',
--- MAGIC     secret_scope => 'my_scope',
--- MAGIC     secret_key => 'my_key',
--- MAGIC     columns_to_encrypt => ARRAY('email', 'ssn', 'name')
+-- MAGIC     source_table => '{catalog}.{schema}.titanic_raw',
+-- MAGIC     secret_scope => '{secret_scope}',
+-- MAGIC     secret_key => '{secret_key}',
+-- MAGIC     columns_to_encrypt => ARRAY('Name', 'Sex', 'Age')
 -- MAGIC   )
 -- MAGIC """)
--- MAGIC
--- MAGIC # Encrypt all columns and write to a table
--- MAGIC spark.sql("""
+-- MAGIC display(encrypted_df)
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC # Encrypt all columns of a table and write to a new table
+-- MAGIC spark.sql(f"""
 -- MAGIC   CALL aes_encrypt_table(
--- MAGIC     source_table => 'my_catalog.my_schema.my_table',
--- MAGIC     secret_scope => 'my_scope',
--- MAGIC     secret_key => 'my_key',
--- MAGIC     target_table => 'my_catalog.my_schema.my_table_encrypted'
+-- MAGIC     source_table => '{catalog}.{schema}.titanic_raw',
+-- MAGIC     secret_scope => '{secret_scope}',
+-- MAGIC     secret_key => '{secret_key}',
+-- MAGIC     target_table => '{catalog}.{schema}.titanic_encrypted_pyspark'
 -- MAGIC   )
 -- MAGIC """)
--- MAGIC ```
+-- MAGIC display(spark.table(f"{catalog}.{schema}.titanic_encrypted_pyspark"))
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC # Decrypt all columns back and return as a DataFrame
+-- MAGIC decrypted_df = spark.sql(f"""
+-- MAGIC   CALL aes_decrypt_table(
+-- MAGIC     source_table => '{catalog}.{schema}.titanic_encrypted_pyspark',
+-- MAGIC     secret_scope => '{secret_scope}',
+-- MAGIC     secret_key => '{secret_key}'
+-- MAGIC   )
+-- MAGIC """)
+-- MAGIC display(decrypted_df)
