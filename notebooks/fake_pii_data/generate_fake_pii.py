@@ -1,7 +1,8 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC # Generate Fake PII Data
 # MAGIC
@@ -220,6 +221,13 @@ def generate_fake_data(pdf: pd.DataFrame) -> pd.DataFrame:
         dl_pattern = DL_FORMATS.get(loc, "??########")
         drivers_license = f.bothify(dl_pattern).upper()
 
+        # Location — f.state() not available for all locales
+        location_choices = [f.city(), f.country(), a.city(), a.country()]
+        try:
+            location_choices.append(f.state())
+        except AttributeError:
+            pass
+
         return {
             "locale": loc,
             "name": random.choice([f.name(), p.full_name()]),
@@ -229,7 +237,7 @@ def generate_fake_data(pdf: pd.DataFrame) -> pd.DataFrame:
             "ipv4": random.choice([f.ipv4(), f.ipv4_private(), f.ipv4_public(), inet.ip_v4(), inet.ip_v4_with_port()]),
             "ipv6": random.choice([f.ipv6(), inet.ip_v6()]),
             "address": random.choice([f.address(), a.address()]),
-            "location": random.choice([f.city(), f.country(), f.state(), a.city(), a.country()]),
+            "location": random.choice(location_choices),
             "national_id": national_id,
             "tax_id": tax_id,
             "bank_number": random.choice([f.bban(), pay.credit_card_number()]),
@@ -283,10 +291,5 @@ display(df)
 
 # COMMAND ----------
 
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-table = dbutils.widgets.get("table_name")
-table_fqn = f"{catalog}.{schema}.{table}"
-
-df.write.mode("overwrite").saveAsTable(table_fqn)
-print(f"Wrote {num_rows:,} rows to {table_fqn}")
+output_table = f"{dbutils.widgets.get('catalog')}.{dbutils.widgets.get('schema')}.{dbutils.widgets.get('table_name')}"
+df.write.option("mergeSchema", "true").mode("overwrite").saveAsTable(output_table)
