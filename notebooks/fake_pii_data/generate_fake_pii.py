@@ -2,7 +2,42 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC # Generate Fake PII Data
+# MAGIC
+# MAGIC This notebook generates realistic fake PII (Personally Identifiable Information) data across multiple locales and writes it to a Unity Catalog Delta table. It uses two complementary libraries — [faker](https://faker.readthedocs.io/) and [mimesis](https://mimesis.name/) — to produce diverse, varied data across 27 columns.
+# MAGIC
+# MAGIC **Key features:**
+# MAGIC - Scales from 1,000 to 1 billion rows by tuning partition size
+# MAGIC - Supports 8 locales with locale-appropriate names, addresses, national IDs, and more
+# MAGIC - Every row gets unique values (generated per-row, not per-partition)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 1. Install dependencies
+# MAGIC
+# MAGIC Install `faker` and `mimesis` on the cluster. These are Python libraries for generating fake data — faker is the more popular general-purpose library, while mimesis is faster and adds additional variety.
+
+# COMMAND ----------
+
 # MAGIC %pip install -q faker mimesis
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 2. Configure parameters
+# MAGIC
+# MAGIC Set up notebook widgets that control the generation run:
+# MAGIC
+# MAGIC | Parameter | Description |
+# MAGIC |---|---|
+# MAGIC | **`num_rows`** | Total number of rows to generate. This is the exact row count in the output table. |
+# MAGIC | **`rows_per_partition`** | How many rows each Spark partition processes. This is a **parallelism tuning knob** — it does not change the total row count. Fewer rows per partition = more partitions = more parallelism but higher scheduling overhead. For large runs (100M+), use 50,000–100,000. |
+# MAGIC | **`locale`** | Which locale(s) to use for data generation. Select "all" for a random mix across all 8 locales, or pick a single locale. |
+# MAGIC | **`catalog`** / **`schema`** / **`table_name`** | The Unity Catalog destination for the output table. |
+# MAGIC
+# MAGIC **Example:** `num_rows=1,000,000` with `rows_per_partition=10,000` creates **100 partitions**, each generating 10K rows, for a total of **1M rows**.
 
 # COMMAND ----------
 
@@ -17,6 +52,10 @@ dbutils.widgets.dropdown("num_rows", defaultValue="1000", choices=[
 dbutils.widgets.dropdown("rows_per_partition", defaultValue="10000", choices=[
     "1000", "5000", "10000", "50000", "100000"
 ])
+
+ALL_LOCALES = ["en_US", "en_GB", "de_DE", "fr_FR", "ja_JP", "zh_CN", "pt_BR", "es_MX"]
+dbutils.widgets.dropdown("locale", defaultValue="all", choices=["all"] + ALL_LOCALES)
+
 catalogs = [x.full_name for x in list(ws.catalogs.list())]
 dbutils.widgets.dropdown("catalog", defaultValue=catalogs[0], choices=catalogs)
 schemas = [x.name for x in list(ws.schemas.list(catalog_name=dbutils.widgets.get("catalog")))]
@@ -26,6 +65,17 @@ dbutils.widgets.text("table_name", defaultValue=f"fake_pii_data_{int(datetime.no
 num_rows = int(dbutils.widgets.get("num_rows"))
 rows_per_partition = int(dbutils.widgets.get("rows_per_partition"))
 num_partitions = max(1, num_rows // rows_per_partition)
+selected_locale = dbutils.widgets.get("locale")
+active_locales = ALL_LOCALES if selected_locale == "all" else [selected_locale]
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 3. Define output schema and locale mappings
+# MAGIC
+# MAGIC The output table has 27 columns covering a broad range of PII categories: identity, contact, financial, network, credentials, and employment. Each column is either always populated (non-nullable) or nullable for fields that are locale-specific (e.g. `tax_id` is only generated for certain locales).
+# MAGIC
+# MAGIC The locale mappings translate between faker locale codes (e.g. `en_US`) and mimesis locale enums (e.g. `Locale.EN`), and define locale-appropriate formats for driver's license numbers.
 
 # COMMAND ----------
 
@@ -61,8 +111,6 @@ output_schema = StructType([
     StructField("job_title", StringType(), False),
 ])
 
-FAKER_LOCALES = ["en_US", "en_GB", "de_DE", "fr_FR", "ja_JP", "zh_CN", "pt_BR", "es_MX"]
-
 # Mimesis locale enum values corresponding to each faker locale
 MIMESIS_LOCALE_MAP = {
     "en_US": "en", "en_GB": "en", "de_DE": "de", "fr_FR": "fr",
@@ -80,6 +128,18 @@ DL_FORMATS = {
     "pt_BR": "###########",
     "es_MX": "???-######",
 }
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 4. Define the generation UDF
+# MAGIC
+# MAGIC This is the core of the notebook. The `generate_fake_data` function runs inside `applyInPandas` — meaning it executes **on Spark executors**, not on the driver. Key design choices:
+# MAGIC
+# MAGIC - **Generators are initialized inside the function** so they don't need to be serialized from the driver to executors. Each partition gets its own fresh instances with independent RNG state.
+# MAGIC - **Each row is generated independently** via a list comprehension calling `gen_row()`, so every row gets unique values (unlike the common mistake of assigning a single value to an entire partition column).
+# MAGIC - **Locale is randomly assigned per row** (from the selected locale set), and locale-sensitive fields (names, addresses, national IDs, driver's licenses, phone numbers) reflect that locale's conventions.
+# MAGIC - **Two libraries per field** where possible — `random.choice` picks between faker and mimesis generators to maximize output diversity.
 
 # COMMAND ----------
 
@@ -107,9 +167,10 @@ def generate_fake_data(pdf: pd.DataFrame) -> pd.DataFrame:
         "en": Locale.EN, "de": Locale.DE, "fr": Locale.FR,
         "ja": Locale.JA, "zh": Locale.ZH, "pt": Locale.PT, "es": Locale.ES,
     }
-    fakers = {loc: Faker(loc) for loc in FAKER_LOCALES}
+    fakers = {loc: Faker(loc) for loc in active_locales}
     mimesis_providers = {}
-    for floc, mloc_key in MIMESIS_LOCALE_MAP.items():
+    for floc in active_locales:
+        mloc_key = MIMESIS_LOCALE_MAP[floc]
         mloc = mimesis_locale_enum[mloc_key]
         mimesis_providers[floc] = {
             "person": Person(mloc),
@@ -119,7 +180,7 @@ def generate_fake_data(pdf: pd.DataFrame) -> pd.DataFrame:
         }
 
     def gen_row():
-        loc = random.choice(FAKER_LOCALES)
+        loc = random.choice(active_locales)
         f = fakers[loc]
         m = mimesis_providers[loc]
         p, a, pay, inet = m["person"], m["address"], m["payment"], m["internet"]
@@ -194,6 +255,15 @@ def generate_fake_data(pdf: pd.DataFrame) -> pd.DataFrame:
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ## 5. Generate the DataFrame
+# MAGIC
+# MAGIC `spark.range()` creates a distributed DataFrame with `num_rows` rows, split across `num_partitions` partitions (calculated as `num_rows // rows_per_partition`). Then `applyInPandas` runs the generation UDF on each partition in parallel across the cluster.
+# MAGIC
+# MAGIC The intermediate `id` and `partition_id` columns are only used to drive the partitioning — the UDF replaces them entirely with the 27 PII columns.
+
+# COMMAND ----------
+
 from pyspark.sql.functions import spark_partition_id
 
 df = (
@@ -203,6 +273,13 @@ df = (
     .applyInPandas(generate_fake_data, output_schema)
 )
 display(df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 6. Write to Unity Catalog
+# MAGIC
+# MAGIC Save the generated DataFrame as a Delta table in the selected catalog and schema. Uses `overwrite` mode so re-running the notebook with the same table name replaces the previous data.
 
 # COMMAND ----------
 

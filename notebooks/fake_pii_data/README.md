@@ -12,6 +12,7 @@ Generates configurable volumes of fake PII data using `faker` and `mimesis` with
 |-----------|------|---------|-------------|
 | `num_rows` | dropdown | `1000` | Number of rows to generate. Options: 1K / 10K / 100K / 1M / 10M / 100M / 1B. |
 | `rows_per_partition` | dropdown | `10000` | Rows per Spark partition. Lower values use more parallelism; higher values reduce task overhead. Tune based on cluster size. |
+| `locale` | dropdown | `all` | Which locale(s) to use. Select `all` for a random mix across all 8 locales, or pick a single locale (e.g. `ja_JP`). |
 | `catalog` | dropdown | First available catalog | Target Unity Catalog catalog (populated dynamically from workspace). |
 | `schema` | dropdown | First schema in selected catalog | Target schema within the selected catalog. |
 | `table_name` | text | `fake_pii_data_<timestamp>` | Name of the output table. Defaults to a timestamped name to avoid collisions. |
