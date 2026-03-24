@@ -355,7 +355,7 @@ SELECT * FROM titanic_encrypted_pii_columns_only
 
 -- COMMAND ----------
 
--- Decrypt just the columns we encrypted
+-- Decrypt just the columns we think are encrypted
 CALL aes_decrypt_table(
   source_table => :catalog || '.' || :schema || '.titanic_encrypted_pii_columns_only',
   secret_scope => :secret_scope,
