@@ -32,13 +32,12 @@
 -- MAGIC
 -- MAGIC catalog = dbutils.widgets.get("catalog")
 -- MAGIC schema = dbutils.widgets.get("schema")
--- MAGIC secret_scope = dbutils.widgets.get("secret_scope")
--- MAGIC secret_key = dbutils.widgets.get("secret_key")
 
 -- COMMAND ----------
 
 USE CATALOG IDENTIFIER(:catalog);
 USE SCHEMA IDENTIFIER(:schema);
+CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_files'));
 
 -- COMMAND ----------
 
@@ -80,14 +79,20 @@ USE SCHEMA IDENTIFIER(:schema);
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 3: Generate some fake PII data to demonstrate with
+-- MAGIC ## Step 3: Get some fake PII data to demonstrate with
+-- MAGIC * Download the titanic dataset and store it in a UC volume for raw files. 
+-- MAGIC * We'll use this to simulate a dataset that contains PII (Name, Age, Sex)
 
 -- COMMAND ----------
 
--- DBTITLE 1,Install faker and mimesis
 -- MAGIC %python
--- MAGIC import subprocess, sys
--- MAGIC subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'faker', 'mimesis', '-q'])
+-- MAGIC import subprocess
+-- MAGIC
+-- MAGIC file_url = "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv"
+-- MAGIC volume_path = f"/Volumes/{catalog}/{schema}/raw_files/titanic.csv"
+-- MAGIC
+-- MAGIC subprocess.run(["wget", file_url, "-O", volume_path], check=True)
+-- MAGIC display(dbutils.fs.ls(f"/Volumes/{catalog}/{schema}/raw_files/"))
 
 -- COMMAND ----------
 
