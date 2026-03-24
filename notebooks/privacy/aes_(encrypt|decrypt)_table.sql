@@ -18,10 +18,22 @@
 
 -- COMMAND ----------
 
-CREATE WIDGET TEXT catalog DEFAULT 'main';
-CREATE WIDGET TEXT schema DEFAULT 'default';
-CREATE WIDGET TEXT secret_scope DEFAULT '';
-CREATE WIDGET TEXT secret_key DEFAULT '';
+-- MAGIC %python 
+-- MAGIC from databricks.sdk import WorkspaceClient
+-- MAGIC import os
+-- MAGIC
+-- MAGIC ws = WorkspaceClient()
+-- MAGIC
+-- MAGIC catalogs = sorted([x.full_name for x in list(ws.catalogs.list())])
+-- MAGIC dbutils.widgets.dropdown("catalog", defaultValue=catalogs[0], choices=catalogs[:1000], label="Catalog")
+-- MAGIC schemas = [x.name for x in list(ws.schemas.list(catalog_name=dbutils.widgets.get("catalog")))]
+-- MAGIC dbutils.widgets.text(name="secret_scope", defaultValue="", label="Secret Scope to use for DEK")
+-- MAGIC dbutils.widgets.text(name="secret_key", defaultValue="", label="Secret Key to use for DEK")
+-- MAGIC
+-- MAGIC catalog = dbutils.widgets.get("catalog")
+-- MAGIC schema = dbutils.widgets.get("schema")
+-- MAGIC secret_scope = dbutils.widgets.get("secret_scope")
+-- MAGIC secret_key = dbutils.widgets.get("secret_key")
 
 -- COMMAND ----------
 
@@ -72,10 +84,137 @@ USE SCHEMA IDENTIFIER(:schema);
 
 -- COMMAND ----------
 
+-- DBTITLE 1,Install faker and mimesis
 -- MAGIC %python
--- MAGIC # We use the shared helper to generate fake PII and register it as both a table and a temp view
--- MAGIC # so we can demonstrate the procedures on both
--- MAGIC %run ../../common/privacy_functions
+-- MAGIC import subprocess, sys
+-- MAGIC subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'faker', 'mimesis', '-q'])
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC # Inlined from ../../common/privacy_functions (because %run is not supported on serverless compute)
+-- MAGIC
+-- MAGIC import pandas as pd
+-- MAGIC from typing import Iterator
+-- MAGIC from pyspark.sql.functions import pandas_udf, col, spark_partition_id, asc, create_map, array, lit, udf
+-- MAGIC from pyspark.sql.types import *
+-- MAGIC import time
+-- MAGIC from datetime import date
+-- MAGIC import random
+-- MAGIC from faker import Faker
+-- MAGIC from mimesis import Generic
+-- MAGIC from mimesis.locales import Locale
+-- MAGIC
+-- MAGIC schema = StructType([
+-- MAGIC   StructField("customer_id", LongType(), False),
+-- MAGIC   StructField("name", StringType(), False),
+-- MAGIC   StructField("email", StringType(), False),
+-- MAGIC   StructField("date_of_birth", DateType(), False),
+-- MAGIC   StructField("age", LongType(), False),
+-- MAGIC   StructField("address", StringType(), False),
+-- MAGIC   StructField("postcode", StringType(), False),
+-- MAGIC   StructField("ipv4", StringType(), False),
+-- MAGIC   StructField("ipv4_with_port", StringType(), False),
+-- MAGIC   StructField("ipv6", StringType(), False),
+-- MAGIC   StructField("mac_address", StringType(), False),
+-- MAGIC   StructField("phone_number", StringType(), False),
+-- MAGIC   StructField("ssn", StringType(), False),
+-- MAGIC   StructField("itin", StringType(), False),
+-- MAGIC   StructField("iban", StringType(), False),
+-- MAGIC   StructField("credit_card", LongType(), False),
+-- MAGIC   StructField("credit_card_with_spaces", StringType(), False),
+-- MAGIC   StructField("credit_card_full", StringType(), False),
+-- MAGIC   StructField("expiry_date", StringType(), False),
+-- MAGIC   StructField("security_code", StringType(), False),
+-- MAGIC   StructField("freetext", StringType(), False),
+-- MAGIC   StructField("passport", StringType(), False),
+-- MAGIC   StructField("aba", StringType(), False),
+-- MAGIC   StructField("bban", StringType(), False),
+-- MAGIC   StructField("uri", StringType(), False),
+-- MAGIC   StructField("url", StringType(), False),
+-- MAGIC   StructField("language", StringType(), False),
+-- MAGIC   StructField("nationality", StringType(), False),
+-- MAGIC   StructField("country", StringType(), False),
+-- MAGIC   StructField("date_time", StringType(), False),
+-- MAGIC ])
+-- MAGIC
+-- MAGIC fake = Faker("en_US")
+-- MAGIC generic = Generic(locale=Locale.EN, seed=1)
+-- MAGIC
+-- MAGIC def get_random_pii():
+-- MAGIC   return random.choice([fake.ascii_free_email(), fake.ipv4(), fake.ipv6()])
+-- MAGIC
+-- MAGIC @pandas_udf("long")
+-- MAGIC def get_customer_id(batch_iter: Iterator[pd.Series]) -> Iterator[pd.Series]:
+-- MAGIC   for id in batch_iter:
+-- MAGIC       yield int(time.time()) + id
+-- MAGIC
+-- MAGIC pii_struct_schema = StructType([
+-- MAGIC     StructField("email_address", StringType(), False),
+-- MAGIC     StructField("ipv4_private", StringType(), False),
+-- MAGIC     StructField("ip_address_v6", StringType(), False),
+-- MAGIC     StructField("ipv4_with_port", StringType(), False),
+-- MAGIC     StructField("mac", StringType(), False),
+-- MAGIC     StructField("imei", StringType(), False),
+-- MAGIC     StructField("credit_card_number", StringType(), False),
+-- MAGIC     StructField("credit_card_expiration_date", StringType(), False),
+-- MAGIC     StructField("cvv", StringType(), False),
+-- MAGIC     StructField("paypal", StringType(), False),
+-- MAGIC     StructField("random_text_with_email", StringType(), False),
+-- MAGIC     StructField("random_text_with_ipv4", StringType(), False)
+-- MAGIC ])
+-- MAGIC
+-- MAGIC def pii_struct():
+-- MAGIC   return (generic.person.email(), fake.ipv4_private(), fake.ipv6(), generic.internet.ip_v4_with_port(), generic.internet.mac_address(), generic.code.imei(), generic.payment.credit_card_number(), generic.payment.credit_card_expiration_date(), generic.payment.cvv(), generic.payment.paypal(), f"{fake.catch_phrase()} {generic.person.email()}", f"{fake.catch_phrase()} {fake.ipv4_public()}")
+-- MAGIC
+-- MAGIC pii_struct_udf = udf(pii_struct, pii_struct_schema)
+-- MAGIC
+-- MAGIC def generate_fake_data(pdf: pd.DataFrame) -> pd.DataFrame:
+-- MAGIC   def generate_data(y):
+-- MAGIC     dob = fake.date_between(start_date='-99y', end_date='-18y')
+-- MAGIC     y["name"] = fake.name()
+-- MAGIC     y["email"] = fake.ascii_free_email()
+-- MAGIC     y["date_of_birth"] = dob
+-- MAGIC     y["age"] = date.today().year - dob.year
+-- MAGIC     y["address"] = fake.address()
+-- MAGIC     y["ipv4"] = fake.ipv4()
+-- MAGIC     y["ipv4_with_port"] = generic.internet.ip_v4_with_port()
+-- MAGIC     y["ipv6"] = fake.ipv6()
+-- MAGIC     y["mac_address"] = fake.mac_address()
+-- MAGIC     y["postcode"] = fake.postcode()
+-- MAGIC     y["phone_number"] = fake.phone_number()
+-- MAGIC     y["ssn"] = fake.ssn()
+-- MAGIC     y["itin"] = fake.itin()
+-- MAGIC     y["iban"] = fake.iban()
+-- MAGIC     y["credit_card"] = int(fake.credit_card_number())
+-- MAGIC     y["credit_card_with_spaces"] = generic.payment.credit_card_number()
+-- MAGIC     y["credit_card_full"] = fake.credit_card_full()
+-- MAGIC     y["expiry_date"] = fake.credit_card_expire()
+-- MAGIC     y["security_code"] = fake.credit_card_security_code()
+-- MAGIC     y["freetext"] = f"{fake.sentence()} {get_random_pii()} {fake.sentence()} {get_random_pii()} {fake.sentence()}"
+-- MAGIC     y["passport"] = fake.passport_number()
+-- MAGIC     y["aba"] = fake.aba()
+-- MAGIC     y["bban"] = fake.bban()
+-- MAGIC     y["uri"] = fake.uri()
+-- MAGIC     y["url"] = fake.url()
+-- MAGIC     y["language"] = generic.person.language()
+-- MAGIC     y["nationality"] = generic.person.nationality()
+-- MAGIC     y["country"] = fake.country()
+-- MAGIC     y["date_time"] = fake.date_time().strftime("%c")
+-- MAGIC     return y
+-- MAGIC   return pdf.apply(generate_data, axis=1).drop(["partition_id", "id"], axis=1)
+-- MAGIC
+-- MAGIC def generate_fake_pii_data(num_rows=1000):
+-- MAGIC   initial_data = spark.range(1, num_rows+1).withColumn("customer_id", get_customer_id(col("id")))
+-- MAGIC   return (
+-- MAGIC     initial_data
+-- MAGIC     .withColumn("partition_id", spark_partition_id())
+-- MAGIC     .groupBy("partition_id")
+-- MAGIC     .applyInPandas(generate_fake_data, schema)
+-- MAGIC     .withColumn("pii_struct", pii_struct_udf())
+-- MAGIC     .withColumn("pii_map", create_map(lit("email_address"), col("email"), lit("ip_address"), col("ipv4"), lit("home_address"), col("address")))
+-- MAGIC     .withColumn("pii_array", array("email", "ipv4", "ipv6"))
+-- MAGIC     .orderBy(asc("customer_id")))
 
 -- COMMAND ----------
 
