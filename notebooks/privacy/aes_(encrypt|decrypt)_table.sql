@@ -107,7 +107,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC | `source_table` | STRING | The source table, view, or temp view to read from |
 -- MAGIC | `secret_scope` | STRING | The Databricks secret scope containing the AES key |
 -- MAGIC | `secret_key` | STRING | The key name within the secret scope |
--- MAGIC | `columns_to_encrypt` | STRING | Comma-separated list of columns to encrypt, or `'*'` for all columns |
+-- MAGIC | `columns_to_encrypt` | ARRAY&lt;STRING&gt; | Array of column names to encrypt, or `NULL` for all columns |
 -- MAGIC | `target_table` | STRING | *(Optional)* If provided, writes results to this table. If empty, returns a result set |
 
 -- COMMAND ----------
@@ -118,56 +118,45 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   source_table STRING,
 -- MAGIC   secret_scope STRING,
 -- MAGIC   secret_key STRING,
--- MAGIC   columns_to_encrypt STRING DEFAULT '*',
+-- MAGIC   columns_to_encrypt ARRAY<STRING> DEFAULT NULL,
 -- MAGIC   target_table STRING DEFAULT ''
 -- MAGIC )
 -- MAGIC LANGUAGE SQL
 -- MAGIC SQL SECURITY INVOKER
 -- MAGIC BEGIN
--- MAGIC   -- Build comma-separated list of columns to encrypt (or all columns if '*')
--- MAGIC   DECLARE encrypt_cols ARRAY<STRING>;
+-- MAGIC   DECLARE select_expr STRING;
 -- MAGIC   DECLARE all_cols ARRAY<STRING>;
--- MAGIC   DECLARE select_expr STRING DEFAULT '';
--- MAGIC   DECLARE i INT DEFAULT 0;
--- MAGIC   DECLARE col_name STRING;
+-- MAGIC   DECLARE encrypt_key STRING DEFAULT quote(secret_scope) || ', ' || quote(secret_key);
 -- MAGIC
--- MAGIC   -- Get all column names from the source table
--- MAGIC   SET all_cols = (
--- MAGIC     SELECT collect_list(column_name)
--- MAGIC     FROM (
--- MAGIC       SELECT column_name
--- MAGIC       FROM system.information_schema.columns
--- MAGIC       WHERE concat_ws('.', table_catalog, table_schema, table_name) = source_table
--- MAGIC       ORDER BY ordinal_position
--- MAGIC     )
+-- MAGIC   -- Build the SELECT expression in a single set-based query using string_agg
+-- MAGIC   SET select_expr = (
+-- MAGIC     SELECT string_agg(
+-- MAGIC       CASE
+-- MAGIC         WHEN columns_to_encrypt IS NULL OR array_contains(columns_to_encrypt, column_name)
+-- MAGIC         THEN 'CASE WHEN ' || column_name || ' IS NOT NULL THEN base64(aes_encrypt(CAST(' || column_name || ' AS STRING), unbase64(secret(' || encrypt_key || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ')) END AS ' || column_name
+-- MAGIC         ELSE column_name
+-- MAGIC       END,
+-- MAGIC       ', '
+-- MAGIC     ) WITHIN GROUP (ORDER BY ordinal_position)
+-- MAGIC     FROM system.information_schema.columns
+-- MAGIC     WHERE concat_ws('.', table_catalog, table_schema, table_name) = source_table
 -- MAGIC   );
 -- MAGIC
--- MAGIC   -- If the table wasn't found in information_schema (e.g. it's a temp view), use DESCRIBE
--- MAGIC   IF (all_cols IS NULL OR size(all_cols) = 0) THEN
+-- MAGIC   -- Fallback for temp views (not in information_schema)
+-- MAGIC   IF (select_expr IS NULL) THEN
 -- MAGIC     EXECUTE IMMEDIATE ('SELECT collect_list(col_name) FROM (DESCRIBE TABLE ' || source_table || ')') INTO all_cols;
+-- MAGIC     SET select_expr = (
+-- MAGIC       SELECT string_agg(
+-- MAGIC         CASE
+-- MAGIC           WHEN columns_to_encrypt IS NULL OR array_contains(columns_to_encrypt, col)
+-- MAGIC           THEN 'CASE WHEN ' || col || ' IS NOT NULL THEN base64(aes_encrypt(CAST(' || col || ' AS STRING), unbase64(secret(' || encrypt_key || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ')) END AS ' || col
+-- MAGIC           ELSE col
+-- MAGIC         END,
+-- MAGIC         ', '
+-- MAGIC       )
+-- MAGIC       FROM explode(all_cols) AS t(col)
+-- MAGIC     );
 -- MAGIC   END IF;
--- MAGIC
--- MAGIC   -- Determine which columns to encrypt
--- MAGIC   IF (columns_to_encrypt = '*') THEN
--- MAGIC     SET encrypt_cols = all_cols;
--- MAGIC   ELSE
--- MAGIC     SET encrypt_cols = (SELECT collect_list(trim(value)) FROM (SELECT explode(split(columns_to_encrypt, ',')) AS value));
--- MAGIC   END IF;
--- MAGIC
--- MAGIC   -- Build the SELECT expression
--- MAGIC   SET i = 0;
--- MAGIC   WHILE i < size(all_cols) DO
--- MAGIC     SET col_name = all_cols[i];
--- MAGIC     IF (i > 0) THEN
--- MAGIC       SET select_expr = select_expr || ', ';
--- MAGIC     END IF;
--- MAGIC     IF (array_contains(encrypt_cols, col_name)) THEN
--- MAGIC       SET select_expr = select_expr || 'base64(aes_encrypt(CAST(' || col_name || ' AS STRING), unbase64(secret(' || quote(secret_scope) || ', ' || quote(secret_key) || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ')) AS ' || col_name;
--- MAGIC     ELSE
--- MAGIC       SET select_expr = select_expr || col_name;
--- MAGIC     END IF;
--- MAGIC     SET i = i + 1;
--- MAGIC   END WHILE;
 -- MAGIC
 -- MAGIC   -- Execute the query
 -- MAGIC   IF (target_table != '') THEN
@@ -189,7 +178,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC | `source_table` | STRING | The source table, view, or temp view to read from |
 -- MAGIC | `secret_scope` | STRING | The Databricks secret scope containing the AES key |
 -- MAGIC | `secret_key` | STRING | The key name within the secret scope |
--- MAGIC | `columns_to_decrypt` | STRING | Comma-separated list of columns to decrypt, or `'*'` for all columns |
+-- MAGIC | `columns_to_decrypt` | ARRAY&lt;STRING&gt; | Array of column names to decrypt, or `NULL` for all columns |
 -- MAGIC | `target_table` | STRING | *(Optional)* If provided, writes results to this table. If empty, returns a result set |
 
 -- COMMAND ----------
@@ -200,55 +189,45 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   source_table STRING,
 -- MAGIC   secret_scope STRING,
 -- MAGIC   secret_key STRING,
--- MAGIC   columns_to_decrypt STRING DEFAULT '*',
+-- MAGIC   columns_to_decrypt ARRAY<STRING> DEFAULT NULL,
 -- MAGIC   target_table STRING DEFAULT ''
 -- MAGIC )
 -- MAGIC LANGUAGE SQL
 -- MAGIC SQL SECURITY INVOKER
 -- MAGIC BEGIN
--- MAGIC   DECLARE decrypt_cols ARRAY<STRING>;
+-- MAGIC   DECLARE select_expr STRING;
 -- MAGIC   DECLARE all_cols ARRAY<STRING>;
--- MAGIC   DECLARE select_expr STRING DEFAULT '';
--- MAGIC   DECLARE i INT DEFAULT 0;
--- MAGIC   DECLARE col_name STRING;
+-- MAGIC   DECLARE decrypt_key STRING DEFAULT quote(secret_scope) || ', ' || quote(secret_key);
 -- MAGIC
--- MAGIC   -- Get all column names from the source table
--- MAGIC   SET all_cols = (
--- MAGIC     SELECT collect_list(column_name)
--- MAGIC     FROM (
--- MAGIC       SELECT column_name
--- MAGIC       FROM system.information_schema.columns
--- MAGIC       WHERE concat_ws('.', table_catalog, table_schema, table_name) = source_table
--- MAGIC       ORDER BY ordinal_position
--- MAGIC     )
+-- MAGIC   -- Build the SELECT expression in a single set-based query using string_agg
+-- MAGIC   SET select_expr = (
+-- MAGIC     SELECT string_agg(
+-- MAGIC       CASE
+-- MAGIC         WHEN columns_to_decrypt IS NULL OR array_contains(columns_to_decrypt, column_name)
+-- MAGIC         THEN 'COALESCE(CAST(try_aes_decrypt(try_to_binary(' || column_name || ', ' || quote('BASE64') || '), unbase64(secret(' || decrypt_key || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ') AS STRING), ' || column_name || ') AS ' || column_name
+-- MAGIC         ELSE column_name
+-- MAGIC       END,
+-- MAGIC       ', '
+-- MAGIC     ) WITHIN GROUP (ORDER BY ordinal_position)
+-- MAGIC     FROM system.information_schema.columns
+-- MAGIC     WHERE concat_ws('.', table_catalog, table_schema, table_name) = source_table
 -- MAGIC   );
 -- MAGIC
--- MAGIC   -- Fallback for temp views
--- MAGIC   IF (all_cols IS NULL OR size(all_cols) = 0) THEN
+-- MAGIC   -- Fallback for temp views (not in information_schema)
+-- MAGIC   IF (select_expr IS NULL) THEN
 -- MAGIC     EXECUTE IMMEDIATE ('SELECT collect_list(col_name) FROM (DESCRIBE TABLE ' || source_table || ')') INTO all_cols;
+-- MAGIC     SET select_expr = (
+-- MAGIC       SELECT string_agg(
+-- MAGIC         CASE
+-- MAGIC           WHEN columns_to_decrypt IS NULL OR array_contains(columns_to_decrypt, col)
+-- MAGIC           THEN 'COALESCE(CAST(try_aes_decrypt(try_to_binary(' || col || ', ' || quote('BASE64') || '), unbase64(secret(' || decrypt_key || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ') AS STRING), ' || col || ') AS ' || col
+-- MAGIC           ELSE col
+-- MAGIC         END,
+-- MAGIC         ', '
+-- MAGIC       )
+-- MAGIC       FROM explode(all_cols) AS t(col)
+-- MAGIC     );
 -- MAGIC   END IF;
--- MAGIC
--- MAGIC   -- Determine which columns to decrypt
--- MAGIC   IF (columns_to_decrypt = '*') THEN
--- MAGIC     SET decrypt_cols = all_cols;
--- MAGIC   ELSE
--- MAGIC     SET decrypt_cols = (SELECT collect_list(trim(value)) FROM (SELECT explode(split(columns_to_decrypt, ',')) AS value));
--- MAGIC   END IF;
--- MAGIC
--- MAGIC   -- Build the SELECT expression
--- MAGIC   SET i = 0;
--- MAGIC   WHILE i < size(all_cols) DO
--- MAGIC     SET col_name = all_cols[i];
--- MAGIC     IF (i > 0) THEN
--- MAGIC       SET select_expr = select_expr || ', ';
--- MAGIC     END IF;
--- MAGIC     IF (array_contains(decrypt_cols, col_name)) THEN
--- MAGIC       SET select_expr = select_expr || 'CAST(aes_decrypt(unbase64(' || col_name || '), unbase64(secret(' || quote(secret_scope) || ', ' || quote(secret_key) || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ') AS STRING) AS ' || col_name;
--- MAGIC     ELSE
--- MAGIC       SET select_expr = select_expr || col_name;
--- MAGIC     END IF;
--- MAGIC     SET i = i + 1;
--- MAGIC   END WHILE;
 -- MAGIC
 -- MAGIC   -- Execute the query
 -- MAGIC   IF (target_table != '') THEN
@@ -279,7 +258,6 @@ CALL aes_encrypt_table(
   source_table => :catalog || '.' || :schema || '.titanic_raw',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
-  columns_to_encrypt => '*',
   target_table => :catalog || '.' || :schema || '.titanic_encrypted'
 );
 
@@ -312,7 +290,7 @@ CALL aes_encrypt_table(
   source_table => :catalog || '.' || :schema || '.titanic_raw',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
-  columns_to_encrypt => 'Name,Sex,Age',
+  columns_to_encrypt => ARRAY('Name', 'Sex', 'Age'),
   target_table => :catalog || '.' || :schema || '.titanic_encrypted_pii_columns_only'
 );
 
@@ -327,29 +305,13 @@ CALL aes_decrypt_table(
   source_table => :catalog || '.' || :schema || '.titanic_encrypted_pii_columns_only',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
-  columns_to_decrypt => '*'
+  columns_to_decrypt => NULL
 );
 
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 9: Use with a DataFrame (temp view)
-
--- COMMAND ----------
-
--- The temp view `fake_pii_df` was registered earlier from a PySpark DataFrame.
--- This demonstrates that the procedures work on temp views too.
-CALL aes_encrypt_table(
-  source_table => 'fake_pii_df',
-  secret_scope => :secret_scope,
-  secret_key => :secret_key,
-  columns_to_encrypt => 'email,ssn'
-);
-
--- COMMAND ----------
-
--- MAGIC %md
--- MAGIC ## Step 10: Call from PySpark
+-- MAGIC ## Step 9: Call from PySpark
 -- MAGIC
 -- MAGIC The procedures are equally callable from PySpark using `spark.sql()`:
 -- MAGIC
@@ -363,7 +325,7 @@ CALL aes_encrypt_table(
 -- MAGIC     source_table => 'my_data',
 -- MAGIC     secret_scope => 'my_scope',
 -- MAGIC     secret_key => 'my_key',
--- MAGIC     columns_to_encrypt => 'email,ssn,name'
+-- MAGIC     columns_to_encrypt => ARRAY('email', 'ssn', 'name')
 -- MAGIC   )
 -- MAGIC """)
 -- MAGIC
@@ -373,7 +335,6 @@ CALL aes_encrypt_table(
 -- MAGIC     source_table => 'my_catalog.my_schema.my_table',
 -- MAGIC     secret_scope => 'my_scope',
 -- MAGIC     secret_key => 'my_key',
--- MAGIC     columns_to_encrypt => '*',
 -- MAGIC     target_table => 'my_catalog.my_schema.my_table_encrypted'
 -- MAGIC   )
 -- MAGIC """)
