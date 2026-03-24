@@ -14,30 +14,31 @@ Scans Unity Catalog tables for PII using Microsoft Presidio and automatically ap
 - Scans each table using `PIIScanner` with a thread pool (capped at 8 workers).
 - Applies Unity Catalog tags (e.g., `PII`, `EMAIL_ADDRESS`, `US_SSN`) and markdown comments to tables and columns where PII is detected.
 
-### format_preserving_encryption.py
+### aes_encrypt|decrypt_table.sql
+
+Creates two stored procedures — `aes_encrypt_table()` and `aes_decrypt_table()` — that apply AES encryption or decryption across an entire table (or a specified subset of columns).
+
+- Encrypts/decrypts all columns or a user-specified list of columns.
+- Supports tag-based encryption — encrypt columns by Unity Catalog column tags (e.g. `pii`) instead of listing column names.
+- Works on tables, views, and temp views (i.e. DataFrames registered via `createOrReplaceTempView`).
+- Optionally writes results to a target table, or returns a result set.
+- Generates a cryptographically random AES-256 key and stores it in Databricks Secrets (or use a pre-existing secret).
+- Pure SQL procedures — callable from both SQL and PySpark.
+
+### format_preserving_encryption/
 
 Demonstrates format-preserving encryption (FPE) using the FF3-1 algorithm, which encrypts data while preserving its original format and length.
 
-- Generates fake PII data, then encrypts selected columns (name, email, SSN, IP addresses, etc.).
-- Supports multiple character sets (numeric, alpha, alphanumeric, ASCII).
-- Handles special characters via two modes: `TOKENIZE` (encrypt everything) or `REASSEMBLE` (preserve special character positions).
-- Decrypts the data back to verify round-trip correctness.
-
-### information_schema_pii_tags.sql
-
-Queries Unity Catalog's information schema to report on PII access. Creates temporary views that join PII tags with privilege grants to answer:
-
-- Which tables, schemas, and catalogs are tagged with PII?
-- Which users and groups have access to PII-tagged securables?
-- Which principals are most privileged across PII data?
+- `format_preserving_encryption.py` — Generates fake PII data, then encrypts selected columns (name, email, SSN, IP addresses, etc.). Supports multiple character sets (numeric, alpha, alphanumeric, ASCII). Handles special characters via two modes: `TOKENIZE` (encrypt everything) or `REASSEMBLE` (preserve special character positions). Decrypts the data back to verify round-trip correctness.
+- `format_preserving_encryption_tests.py` — Tests for the FPE implementation.
 
 ## Prerequisites
 
 - **Pip packages**: Installed automatically via `%pip install -q -r ../../requirements.txt` at the top of each Python notebook. Key packages include `presidio_analyzer`, `presidio_anonymizer`, `faker`, `mimesis`, and `ff3` (for FPE).
 - **spaCy model**: `identifying_and_tagging_pii.py` downloads `en_core_web_lg` at startup.
-- **Unity Catalog access**: The scanning and tagging notebooks require access to `system.information_schema` and `ALTER` permissions on target securables.
-- **Databricks secrets** (recommended for FPE): The encryption notebook generates ephemeral keys by default but should use `dbutils.secrets` in production.
+- **Unity Catalog access**: The notebooks require access to `system.information_schema` and `ALTER` permissions on target securables.
+- **Databricks secrets**: The AES notebook stores its encryption key in a Databricks secret scope. The FPE notebook generates ephemeral keys by default but should use `dbutils.secrets` in production.
 
 ## Running
 
-The three notebooks are independent and can be run in any order. Each is self-contained with its own setup cells.
+The notebooks are independent and can be run in any order. Each is self-contained with its own setup cells.

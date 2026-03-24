@@ -128,6 +128,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC )
 -- MAGIC LANGUAGE SQL
 -- MAGIC SQL SECURITY INVOKER
+-- MAGIC COMMENT 'AES-encrypts columns of a table using a key stored in Databricks Secrets. Encrypts all columns by default, or a specified subset by name or Unity Catalog column tags. Optionally writes results to a target table (with tags copied from the source) or returns a result set.'
 -- MAGIC BEGIN
 -- MAGIC   DECLARE select_expr STRING;
 -- MAGIC   DECLARE all_cols ARRAY<STRING>;
@@ -184,6 +185,15 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   -- Execute the query
 -- MAGIC   IF (target_table != '') THEN
 -- MAGIC     EXECUTE IMMEDIATE ('CREATE OR REPLACE TABLE ' || target_table || ' AS SELECT ' || select_expr || ' FROM ' || source_table);
+-- MAGIC     -- Copy column tags from source to target table so tag-based decryption works
+-- MAGIC     FOR tag_row AS (
+-- MAGIC       SELECT column_name, tag_name, tag_value
+-- MAGIC       FROM system.information_schema.column_tags
+-- MAGIC       WHERE concat_ws('.', catalog_name, schema_name, table_name) = full_table_name
+-- MAGIC     )
+-- MAGIC     DO
+-- MAGIC       EXECUTE IMMEDIATE ('ALTER TABLE ' || target_table || ' ALTER COLUMN ' || tag_row.column_name || ' SET TAGS (' || quote(tag_row.tag_name) || ' = ' || quote(tag_row.tag_value) || ')');
+-- MAGIC     END FOR;
 -- MAGIC   ELSE
 -- MAGIC     EXECUTE IMMEDIATE ('SELECT ' || select_expr || ' FROM ' || source_table);
 -- MAGIC   END IF;
@@ -219,6 +229,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC )
 -- MAGIC LANGUAGE SQL
 -- MAGIC SQL SECURITY INVOKER
+-- MAGIC COMMENT 'AES-decrypts columns of a table using a key stored in Databricks Secrets. Decrypts all columns by default, or a specified subset by name or Unity Catalog column tags. Uses error-tolerant decryption (try_aes_decrypt) so non-encrypted columns pass through unchanged.'
 -- MAGIC BEGIN
 -- MAGIC   DECLARE select_expr STRING;
 -- MAGIC   DECLARE all_cols ARRAY<STRING>;
