@@ -27,6 +27,8 @@
 -- MAGIC catalogs = sorted([x.full_name for x in list(ws.catalogs.list())])
 -- MAGIC dbutils.widgets.dropdown("catalog", defaultValue=catalogs[0], choices=catalogs[:1000], label="Catalog")
 -- MAGIC schemas = [x.name for x in list(ws.schemas.list(catalog_name=dbutils.widgets.get("catalog")))]
+-- MAGIC dbutils.widgets.dropdown("schema", defaultValue=schemas[0], choices=schemas[:1000], label="Schema")
+-- MAGIC
 -- MAGIC dbutils.widgets.text(name="secret_scope", defaultValue="", label="Secret Scope to use for DEK")
 -- MAGIC dbutils.widgets.text(name="secret_key", defaultValue="", label="Secret Key to use for DEK")
 -- MAGIC
@@ -96,153 +98,6 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 
 -- COMMAND ----------
 
--- MAGIC %python
--- MAGIC # Inlined from ../../common/privacy_functions (because %run is not supported on serverless compute)
--- MAGIC
--- MAGIC import pandas as pd
--- MAGIC from typing import Iterator
--- MAGIC from pyspark.sql.functions import pandas_udf, col, spark_partition_id, asc, create_map, array, lit, udf
--- MAGIC from pyspark.sql.types import *
--- MAGIC import time
--- MAGIC from datetime import date
--- MAGIC import random
--- MAGIC from faker import Faker
--- MAGIC from mimesis import Generic
--- MAGIC from mimesis.locales import Locale
--- MAGIC
--- MAGIC schema = StructType([
--- MAGIC   StructField("customer_id", LongType(), False),
--- MAGIC   StructField("name", StringType(), False),
--- MAGIC   StructField("email", StringType(), False),
--- MAGIC   StructField("date_of_birth", DateType(), False),
--- MAGIC   StructField("age", LongType(), False),
--- MAGIC   StructField("address", StringType(), False),
--- MAGIC   StructField("postcode", StringType(), False),
--- MAGIC   StructField("ipv4", StringType(), False),
--- MAGIC   StructField("ipv4_with_port", StringType(), False),
--- MAGIC   StructField("ipv6", StringType(), False),
--- MAGIC   StructField("mac_address", StringType(), False),
--- MAGIC   StructField("phone_number", StringType(), False),
--- MAGIC   StructField("ssn", StringType(), False),
--- MAGIC   StructField("itin", StringType(), False),
--- MAGIC   StructField("iban", StringType(), False),
--- MAGIC   StructField("credit_card", LongType(), False),
--- MAGIC   StructField("credit_card_with_spaces", StringType(), False),
--- MAGIC   StructField("credit_card_full", StringType(), False),
--- MAGIC   StructField("expiry_date", StringType(), False),
--- MAGIC   StructField("security_code", StringType(), False),
--- MAGIC   StructField("freetext", StringType(), False),
--- MAGIC   StructField("passport", StringType(), False),
--- MAGIC   StructField("aba", StringType(), False),
--- MAGIC   StructField("bban", StringType(), False),
--- MAGIC   StructField("uri", StringType(), False),
--- MAGIC   StructField("url", StringType(), False),
--- MAGIC   StructField("language", StringType(), False),
--- MAGIC   StructField("nationality", StringType(), False),
--- MAGIC   StructField("country", StringType(), False),
--- MAGIC   StructField("date_time", StringType(), False),
--- MAGIC ])
--- MAGIC
--- MAGIC fake = Faker("en_US")
--- MAGIC generic = Generic(locale=Locale.EN, seed=1)
--- MAGIC
--- MAGIC def get_random_pii():
--- MAGIC   return random.choice([fake.ascii_free_email(), fake.ipv4(), fake.ipv6()])
--- MAGIC
--- MAGIC @pandas_udf("long")
--- MAGIC def get_customer_id(batch_iter: Iterator[pd.Series]) -> Iterator[pd.Series]:
--- MAGIC   for id in batch_iter:
--- MAGIC       yield int(time.time()) + id
--- MAGIC
--- MAGIC pii_struct_schema = StructType([
--- MAGIC     StructField("email_address", StringType(), False),
--- MAGIC     StructField("ipv4_private", StringType(), False),
--- MAGIC     StructField("ip_address_v6", StringType(), False),
--- MAGIC     StructField("ipv4_with_port", StringType(), False),
--- MAGIC     StructField("mac", StringType(), False),
--- MAGIC     StructField("imei", StringType(), False),
--- MAGIC     StructField("credit_card_number", StringType(), False),
--- MAGIC     StructField("credit_card_expiration_date", StringType(), False),
--- MAGIC     StructField("cvv", StringType(), False),
--- MAGIC     StructField("paypal", StringType(), False),
--- MAGIC     StructField("random_text_with_email", StringType(), False),
--- MAGIC     StructField("random_text_with_ipv4", StringType(), False)
--- MAGIC ])
--- MAGIC
--- MAGIC def pii_struct():
--- MAGIC   return (generic.person.email(), fake.ipv4_private(), fake.ipv6(), generic.internet.ip_v4_with_port(), generic.internet.mac_address(), generic.code.imei(), generic.payment.credit_card_number(), generic.payment.credit_card_expiration_date(), generic.payment.cvv(), generic.payment.paypal(), f"{fake.catch_phrase()} {generic.person.email()}", f"{fake.catch_phrase()} {fake.ipv4_public()}")
--- MAGIC
--- MAGIC pii_struct_udf = udf(pii_struct, pii_struct_schema)
--- MAGIC
--- MAGIC def generate_fake_data(pdf: pd.DataFrame) -> pd.DataFrame:
--- MAGIC   def generate_data(y):
--- MAGIC     dob = fake.date_between(start_date='-99y', end_date='-18y')
--- MAGIC     y["name"] = fake.name()
--- MAGIC     y["email"] = fake.ascii_free_email()
--- MAGIC     y["date_of_birth"] = dob
--- MAGIC     y["age"] = date.today().year - dob.year
--- MAGIC     y["address"] = fake.address()
--- MAGIC     y["ipv4"] = fake.ipv4()
--- MAGIC     y["ipv4_with_port"] = generic.internet.ip_v4_with_port()
--- MAGIC     y["ipv6"] = fake.ipv6()
--- MAGIC     y["mac_address"] = fake.mac_address()
--- MAGIC     y["postcode"] = fake.postcode()
--- MAGIC     y["phone_number"] = fake.phone_number()
--- MAGIC     y["ssn"] = fake.ssn()
--- MAGIC     y["itin"] = fake.itin()
--- MAGIC     y["iban"] = fake.iban()
--- MAGIC     y["credit_card"] = int(fake.credit_card_number())
--- MAGIC     y["credit_card_with_spaces"] = generic.payment.credit_card_number()
--- MAGIC     y["credit_card_full"] = fake.credit_card_full()
--- MAGIC     y["expiry_date"] = fake.credit_card_expire()
--- MAGIC     y["security_code"] = fake.credit_card_security_code()
--- MAGIC     y["freetext"] = f"{fake.sentence()} {get_random_pii()} {fake.sentence()} {get_random_pii()} {fake.sentence()}"
--- MAGIC     y["passport"] = fake.passport_number()
--- MAGIC     y["aba"] = fake.aba()
--- MAGIC     y["bban"] = fake.bban()
--- MAGIC     y["uri"] = fake.uri()
--- MAGIC     y["url"] = fake.url()
--- MAGIC     y["language"] = generic.person.language()
--- MAGIC     y["nationality"] = generic.person.nationality()
--- MAGIC     y["country"] = fake.country()
--- MAGIC     y["date_time"] = fake.date_time().strftime("%c")
--- MAGIC     return y
--- MAGIC   return pdf.apply(generate_data, axis=1).drop(["partition_id", "id"], axis=1)
--- MAGIC
--- MAGIC def generate_fake_pii_data(num_rows=1000):
--- MAGIC   initial_data = spark.range(1, num_rows+1).withColumn("customer_id", get_customer_id(col("id")))
--- MAGIC   return (
--- MAGIC     initial_data
--- MAGIC     .withColumn("partition_id", spark_partition_id())
--- MAGIC     .groupBy("partition_id")
--- MAGIC     .applyInPandas(generate_fake_data, schema)
--- MAGIC     .withColumn("pii_struct", pii_struct_udf())
--- MAGIC     .withColumn("pii_map", create_map(lit("email_address"), col("email"), lit("ip_address"), col("ipv4"), lit("home_address"), col("address")))
--- MAGIC     .withColumn("pii_array", array("email", "ipv4", "ipv6"))
--- MAGIC     .orderBy(asc("customer_id")))
-
--- COMMAND ----------
-
--- MAGIC %python
--- MAGIC catalog = dbutils.widgets.get("catalog")
--- MAGIC schema = dbutils.widgets.get("schema")
--- MAGIC
--- MAGIC df = generate_fake_pii_data(num_rows=100).select(
--- MAGIC     "customer_id", "name", "email", "date_of_birth", "ssn", "phone_number", "credit_card", "iban", "ipv4", "address"
--- MAGIC )
--- MAGIC
--- MAGIC # Write to a Unity Catalog table
--- MAGIC df.write.mode("overwrite").saveAsTable(f"{catalog}.{schema}.fake_pii_raw")
--- MAGIC
--- MAGIC # Also register as a temp view to demonstrate DataFrame usage
--- MAGIC df.createOrReplaceTempView("fake_pii_df")
-
--- COMMAND ----------
-
-SELECT * FROM fake_pii_raw
-
--- COMMAND ----------
-
 -- MAGIC %md
 -- MAGIC ## Step 4: Create the `aes_encrypt_table` stored procedure
 -- MAGIC
@@ -257,66 +112,71 @@ SELECT * FROM fake_pii_raw
 
 -- COMMAND ----------
 
-CREATE OR REPLACE PROCEDURE aes_encrypt_table(
-  source_table STRING,
-  secret_scope STRING,
-  secret_key STRING,
-  columns_to_encrypt STRING DEFAULT '*',
-  target_table STRING DEFAULT ''
-)
-LANGUAGE SQL
-BEGIN
-  -- Build comma-separated list of columns to encrypt (or all columns if '*')
-  DECLARE encrypt_cols ARRAY<STRING>;
-  DECLARE all_cols ARRAY<STRING>;
-  DECLARE select_expr STRING DEFAULT '';
-  DECLARE i INT DEFAULT 0;
-  DECLARE col_name STRING;
-
-  -- Get all column names from the source table
-  SET all_cols = (
-    SELECT collect_list(column_name)
-    FROM system.information_schema.columns
-    WHERE concat_ws('.', table_catalog, table_schema, table_name) = source_table
-    ORDER BY ordinal_position
-  );
-
-  -- If the table wasn't found in information_schema (e.g. it's a temp view), use DESCRIBE
-  IF (all_cols IS NULL OR size(all_cols) = 0) THEN
-    SET all_cols = (
-      SELECT collect_list(col_name) FROM (DESCRIBE TABLE IDENTIFIER(source_table))
-    );
-  END IF;
-
-  -- Determine which columns to encrypt
-  IF (columns_to_encrypt = '*') THEN
-    SET encrypt_cols = all_cols;
-  ELSE
-    SET encrypt_cols = (SELECT collect_list(trim(value)) FROM (SELECT explode(split(columns_to_encrypt, ',')) AS value));
-  END IF;
-
-  -- Build the SELECT expression
-  SET i = 0;
-  WHILE i < size(all_cols) DO
-    SET col_name = all_cols[i];
-    IF (i > 0) THEN
-      SET select_expr = select_expr || ', ';
-    END IF;
-    IF (array_contains(encrypt_cols, col_name)) THEN
-      SET select_expr = select_expr || 'base64(aes_encrypt(CAST(' || col_name || ' AS STRING), unbase64(secret(' || quote(secret_scope) || ', ' || quote(secret_key) || ')), \'GCM\', \'DEFAULT\')) AS ' || col_name;
-    ELSE
-      SET select_expr = select_expr || col_name;
-    END IF;
-    SET i = i + 1;
-  END WHILE;
-
-  -- Execute the query
-  IF (target_table != '') THEN
-    EXECUTE IMMEDIATE ('CREATE OR REPLACE TABLE ' || target_table || ' AS SELECT ' || select_expr || ' FROM ' || source_table);
-  ELSE
-    EXECUTE IMMEDIATE ('SELECT ' || select_expr || ' FROM ' || source_table);
-  END IF;
-END;
+-- MAGIC %python
+-- MAGIC spark.sql("""
+-- MAGIC CREATE OR REPLACE PROCEDURE aes_encrypt_table(
+-- MAGIC   source_table STRING,
+-- MAGIC   secret_scope STRING,
+-- MAGIC   secret_key STRING,
+-- MAGIC   columns_to_encrypt STRING DEFAULT '*',
+-- MAGIC   target_table STRING DEFAULT ''
+-- MAGIC )
+-- MAGIC LANGUAGE SQL
+-- MAGIC SQL SECURITY INVOKER
+-- MAGIC BEGIN
+-- MAGIC   -- Build comma-separated list of columns to encrypt (or all columns if '*')
+-- MAGIC   DECLARE encrypt_cols ARRAY<STRING>;
+-- MAGIC   DECLARE all_cols ARRAY<STRING>;
+-- MAGIC   DECLARE select_expr STRING DEFAULT '';
+-- MAGIC   DECLARE i INT DEFAULT 0;
+-- MAGIC   DECLARE col_name STRING;
+-- MAGIC
+-- MAGIC   -- Get all column names from the source table
+-- MAGIC   SET all_cols = (
+-- MAGIC     SELECT collect_list(column_name)
+-- MAGIC     FROM (
+-- MAGIC       SELECT column_name
+-- MAGIC       FROM system.information_schema.columns
+-- MAGIC       WHERE concat_ws('.', table_catalog, table_schema, table_name) = source_table
+-- MAGIC       ORDER BY ordinal_position
+-- MAGIC     )
+-- MAGIC   );
+-- MAGIC
+-- MAGIC   -- If the table wasn't found in information_schema (e.g. it's a temp view), use DESCRIBE
+-- MAGIC   IF (all_cols IS NULL OR size(all_cols) = 0) THEN
+-- MAGIC     EXECUTE IMMEDIATE ('SELECT collect_list(col_name) FROM (DESCRIBE TABLE ' || source_table || ')') INTO all_cols;
+-- MAGIC   END IF;
+-- MAGIC
+-- MAGIC   -- Determine which columns to encrypt
+-- MAGIC   IF (columns_to_encrypt = '*') THEN
+-- MAGIC     SET encrypt_cols = all_cols;
+-- MAGIC   ELSE
+-- MAGIC     SET encrypt_cols = (SELECT collect_list(trim(value)) FROM (SELECT explode(split(columns_to_encrypt, ',')) AS value));
+-- MAGIC   END IF;
+-- MAGIC
+-- MAGIC   -- Build the SELECT expression
+-- MAGIC   SET i = 0;
+-- MAGIC   WHILE i < size(all_cols) DO
+-- MAGIC     SET col_name = all_cols[i];
+-- MAGIC     IF (i > 0) THEN
+-- MAGIC       SET select_expr = select_expr || ', ';
+-- MAGIC     END IF;
+-- MAGIC     IF (array_contains(encrypt_cols, col_name)) THEN
+-- MAGIC       SET select_expr = select_expr || 'base64(aes_encrypt(CAST(' || col_name || ' AS STRING), unbase64(secret(' || quote(secret_scope) || ', ' || quote(secret_key) || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ')) AS ' || col_name;
+-- MAGIC     ELSE
+-- MAGIC       SET select_expr = select_expr || col_name;
+-- MAGIC     END IF;
+-- MAGIC     SET i = i + 1;
+-- MAGIC   END WHILE;
+-- MAGIC
+-- MAGIC   -- Execute the query
+-- MAGIC   IF (target_table != '') THEN
+-- MAGIC     EXECUTE IMMEDIATE ('CREATE OR REPLACE TABLE ' || target_table || ' AS SELECT ' || select_expr || ' FROM ' || source_table);
+-- MAGIC   ELSE
+-- MAGIC     EXECUTE IMMEDIATE ('SELECT ' || select_expr || ' FROM ' || source_table);
+-- MAGIC   END IF;
+-- MAGIC END
+-- MAGIC """)
 
 -- COMMAND ----------
 
@@ -334,65 +194,70 @@ END;
 
 -- COMMAND ----------
 
-CREATE OR REPLACE PROCEDURE aes_decrypt_table(
-  source_table STRING,
-  secret_scope STRING,
-  secret_key STRING,
-  columns_to_decrypt STRING DEFAULT '*',
-  target_table STRING DEFAULT ''
-)
-LANGUAGE SQL
-BEGIN
-  DECLARE decrypt_cols ARRAY<STRING>;
-  DECLARE all_cols ARRAY<STRING>;
-  DECLARE select_expr STRING DEFAULT '';
-  DECLARE i INT DEFAULT 0;
-  DECLARE col_name STRING;
-
-  -- Get all column names from the source table
-  SET all_cols = (
-    SELECT collect_list(column_name)
-    FROM system.information_schema.columns
-    WHERE concat_ws('.', table_catalog, table_schema, table_name) = source_table
-    ORDER BY ordinal_position
-  );
-
-  -- Fallback for temp views
-  IF (all_cols IS NULL OR size(all_cols) = 0) THEN
-    SET all_cols = (
-      SELECT collect_list(col_name) FROM (DESCRIBE TABLE IDENTIFIER(source_table))
-    );
-  END IF;
-
-  -- Determine which columns to decrypt
-  IF (columns_to_decrypt = '*') THEN
-    SET decrypt_cols = all_cols;
-  ELSE
-    SET decrypt_cols = (SELECT collect_list(trim(value)) FROM (SELECT explode(split(columns_to_decrypt, ',')) AS value));
-  END IF;
-
-  -- Build the SELECT expression
-  SET i = 0;
-  WHILE i < size(all_cols) DO
-    SET col_name = all_cols[i];
-    IF (i > 0) THEN
-      SET select_expr = select_expr || ', ';
-    END IF;
-    IF (array_contains(decrypt_cols, col_name)) THEN
-      SET select_expr = select_expr || 'CAST(aes_decrypt(unbase64(' || col_name || '), unbase64(secret(' || quote(secret_scope) || ', ' || quote(secret_key) || ')), \'GCM\', \'DEFAULT\') AS STRING) AS ' || col_name;
-    ELSE
-      SET select_expr = select_expr || col_name;
-    END IF;
-    SET i = i + 1;
-  END WHILE;
-
-  -- Execute the query
-  IF (target_table != '') THEN
-    EXECUTE IMMEDIATE ('CREATE OR REPLACE TABLE ' || target_table || ' AS SELECT ' || select_expr || ' FROM ' || source_table);
-  ELSE
-    EXECUTE IMMEDIATE ('SELECT ' || select_expr || ' FROM ' || source_table);
-  END IF;
-END;
+-- MAGIC %python
+-- MAGIC spark.sql("""
+-- MAGIC CREATE OR REPLACE PROCEDURE aes_decrypt_table(
+-- MAGIC   source_table STRING,
+-- MAGIC   secret_scope STRING,
+-- MAGIC   secret_key STRING,
+-- MAGIC   columns_to_decrypt STRING DEFAULT '*',
+-- MAGIC   target_table STRING DEFAULT ''
+-- MAGIC )
+-- MAGIC LANGUAGE SQL
+-- MAGIC SQL SECURITY INVOKER
+-- MAGIC BEGIN
+-- MAGIC   DECLARE decrypt_cols ARRAY<STRING>;
+-- MAGIC   DECLARE all_cols ARRAY<STRING>;
+-- MAGIC   DECLARE select_expr STRING DEFAULT '';
+-- MAGIC   DECLARE i INT DEFAULT 0;
+-- MAGIC   DECLARE col_name STRING;
+-- MAGIC
+-- MAGIC   -- Get all column names from the source table
+-- MAGIC   SET all_cols = (
+-- MAGIC     SELECT collect_list(column_name)
+-- MAGIC     FROM (
+-- MAGIC       SELECT column_name
+-- MAGIC       FROM system.information_schema.columns
+-- MAGIC       WHERE concat_ws('.', table_catalog, table_schema, table_name) = source_table
+-- MAGIC       ORDER BY ordinal_position
+-- MAGIC     )
+-- MAGIC   );
+-- MAGIC
+-- MAGIC   -- Fallback for temp views
+-- MAGIC   IF (all_cols IS NULL OR size(all_cols) = 0) THEN
+-- MAGIC     EXECUTE IMMEDIATE ('SELECT collect_list(col_name) FROM (DESCRIBE TABLE ' || source_table || ')') INTO all_cols;
+-- MAGIC   END IF;
+-- MAGIC
+-- MAGIC   -- Determine which columns to decrypt
+-- MAGIC   IF (columns_to_decrypt = '*') THEN
+-- MAGIC     SET decrypt_cols = all_cols;
+-- MAGIC   ELSE
+-- MAGIC     SET decrypt_cols = (SELECT collect_list(trim(value)) FROM (SELECT explode(split(columns_to_decrypt, ',')) AS value));
+-- MAGIC   END IF;
+-- MAGIC
+-- MAGIC   -- Build the SELECT expression
+-- MAGIC   SET i = 0;
+-- MAGIC   WHILE i < size(all_cols) DO
+-- MAGIC     SET col_name = all_cols[i];
+-- MAGIC     IF (i > 0) THEN
+-- MAGIC       SET select_expr = select_expr || ', ';
+-- MAGIC     END IF;
+-- MAGIC     IF (array_contains(decrypt_cols, col_name)) THEN
+-- MAGIC       SET select_expr = select_expr || 'CAST(aes_decrypt(unbase64(' || col_name || '), unbase64(secret(' || quote(secret_scope) || ', ' || quote(secret_key) || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ') AS STRING) AS ' || col_name;
+-- MAGIC     ELSE
+-- MAGIC       SET select_expr = select_expr || col_name;
+-- MAGIC     END IF;
+-- MAGIC     SET i = i + 1;
+-- MAGIC   END WHILE;
+-- MAGIC
+-- MAGIC   -- Execute the query
+-- MAGIC   IF (target_table != '') THEN
+-- MAGIC     EXECUTE IMMEDIATE ('CREATE OR REPLACE TABLE ' || target_table || ' AS SELECT ' || select_expr || ' FROM ' || source_table);
+-- MAGIC   ELSE
+-- MAGIC     EXECUTE IMMEDIATE ('SELECT ' || select_expr || ' FROM ' || source_table);
+-- MAGIC   END IF;
+-- MAGIC END
+-- MAGIC """)
 
 -- COMMAND ----------
 
@@ -401,18 +266,26 @@ END;
 
 -- COMMAND ----------
 
+-- Load the titanic CSV from the volume into a table
+CREATE OR REPLACE TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_raw') AS
+SELECT * FROM read_files(
+  concat('/Volumes/', :catalog, '/', :schema, '/raw_files/titanic.csv'),
+  format => 'csv',
+  header => 'true'
+);
+
 -- Encrypt every column and write to a new table
 CALL aes_encrypt_table(
-  source_table => :catalog || '.' || :schema || '.fake_pii_raw',
+  source_table => :catalog || '.' || :schema || '.titanic_raw',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
   columns_to_encrypt => '*',
-  target_table => :catalog || '.' || :schema || '.fake_pii_encrypted'
+  target_table => :catalog || '.' || :schema || '.titanic_encrypted'
 );
 
 -- COMMAND ----------
 
-SELECT * FROM fake_pii_encrypted
+SELECT * FROM titanic_encrypted
 
 -- COMMAND ----------
 
@@ -422,7 +295,7 @@ SELECT * FROM fake_pii_encrypted
 -- COMMAND ----------
 
 CALL aes_decrypt_table(
-  source_table => :catalog || '.' || :schema || '.fake_pii_encrypted',
+  source_table => :catalog || '.' || :schema || '.titanic_encrypted',
   secret_scope => :secret_scope,
   secret_key => :secret_key
 );
@@ -436,25 +309,25 @@ CALL aes_decrypt_table(
 
 -- Only encrypt the sensitive columns, leaving customer_id in the clear
 CALL aes_encrypt_table(
-  source_table => :catalog || '.' || :schema || '.fake_pii_raw',
+  source_table => :catalog || '.' || :schema || '.titanic_raw',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
-  columns_to_encrypt => 'name,email,ssn,phone_number,credit_card,iban,address',
-  target_table => :catalog || '.' || :schema || '.fake_pii_partial_encrypted'
+  columns_to_encrypt => 'Name,Sex,Age',
+  target_table => :catalog || '.' || :schema || '.titanic_encrypted_pii_columns_only'
 );
 
 -- COMMAND ----------
 
-SELECT * FROM fake_pii_partial_encrypted
+SELECT * FROM titanic_encrypted_pii_columns_only
 
 -- COMMAND ----------
 
 -- Decrypt just the columns we encrypted
 CALL aes_decrypt_table(
-  source_table => :catalog || '.' || :schema || '.fake_pii_partial_encrypted',
+  source_table => :catalog || '.' || :schema || '.titanic_encrypted_pii_columns_only',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
-  columns_to_decrypt => 'name,email,ssn,phone_number,credit_card,iban,address'
+  columns_to_decrypt => '*'
 );
 
 -- COMMAND ----------
@@ -505,16 +378,3 @@ CALL aes_encrypt_table(
 -- MAGIC   )
 -- MAGIC """)
 -- MAGIC ```
-
--- COMMAND ----------
-
--- MAGIC %md
--- MAGIC ## Cleanup
-
--- COMMAND ----------
-
--- DROP TABLE IF EXISTS fake_pii_raw;
--- DROP TABLE IF EXISTS fake_pii_encrypted;
--- DROP TABLE IF EXISTS fake_pii_partial_encrypted;
--- DROP PROCEDURE IF EXISTS aes_encrypt_table;
--- DROP PROCEDURE IF EXISTS aes_decrypt_table;
