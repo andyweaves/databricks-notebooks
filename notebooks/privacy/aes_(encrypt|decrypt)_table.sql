@@ -110,7 +110,8 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC | `source_table` | STRING | The source table, view, or temp view to read from |
 -- MAGIC | `secret_scope` | STRING | The Databricks secret scope containing the AES key |
 -- MAGIC | `secret_key` | STRING | The key name within the secret scope |
--- MAGIC | `columns_to_encrypt` | ARRAY&lt;STRING&gt; | Array of column names to encrypt, or `NULL` for all columns |
+-- MAGIC | `columns_to_encrypt` | ARRAY&lt;STRING&gt; | *(Optional)* Array of column names to encrypt. If `NULL` and no tags specified, encrypts all columns |
+-- MAGIC | `tags` | ARRAY&lt;STRING&gt; | *(Optional)* Array of Unity Catalog column tag names — columns with any of these tags will be encrypted |
 -- MAGIC | `target_table` | STRING | *(Optional)* If provided, writes results to this table. If empty, returns a result set |
 
 -- COMMAND ----------
@@ -122,6 +123,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   secret_scope STRING,
 -- MAGIC   secret_key STRING,
 -- MAGIC   columns_to_encrypt ARRAY<STRING> DEFAULT NULL,
+-- MAGIC   tags ARRAY<STRING> DEFAULT NULL,
 -- MAGIC   target_table STRING DEFAULT ''
 -- MAGIC )
 -- MAGIC LANGUAGE SQL
@@ -138,6 +140,16 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC     WHEN source_table NOT LIKE '%.%.%' THEN current_catalog() || '.' || source_table
 -- MAGIC     ELSE source_table
 -- MAGIC   END;
+-- MAGIC
+-- MAGIC   -- If tags are specified, resolve them to column names via column_tags
+-- MAGIC   IF (tags IS NOT NULL) THEN
+-- MAGIC     SET columns_to_encrypt = (
+-- MAGIC       SELECT collect_set(ct.column_name)
+-- MAGIC       FROM system.information_schema.column_tags ct
+-- MAGIC       WHERE concat_ws('.', ct.catalog_name, ct.schema_name, ct.table_name) = full_table_name
+-- MAGIC         AND array_contains(tags, ct.tag_name)
+-- MAGIC     );
+-- MAGIC   END IF;
 -- MAGIC
 -- MAGIC   -- Build the SELECT expression in a single set-based query using string_agg
 -- MAGIC   SET select_expr = (
@@ -189,7 +201,8 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC | `source_table` | STRING | The source table, view, or temp view to read from |
 -- MAGIC | `secret_scope` | STRING | The Databricks secret scope containing the AES key |
 -- MAGIC | `secret_key` | STRING | The key name within the secret scope |
--- MAGIC | `columns_to_decrypt` | ARRAY&lt;STRING&gt; | Array of column names to decrypt, or `NULL` for all columns |
+-- MAGIC | `columns_to_decrypt` | ARRAY&lt;STRING&gt; | *(Optional)* Array of column names to decrypt. If `NULL` and no tags specified, decrypts all columns |
+-- MAGIC | `tags` | ARRAY&lt;STRING&gt; | *(Optional)* Array of Unity Catalog column tag names — columns with any of these tags will be decrypted |
 -- MAGIC | `target_table` | STRING | *(Optional)* If provided, writes results to this table. If empty, returns a result set |
 
 -- COMMAND ----------
@@ -201,6 +214,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   secret_scope STRING,
 -- MAGIC   secret_key STRING,
 -- MAGIC   columns_to_decrypt ARRAY<STRING> DEFAULT NULL,
+-- MAGIC   tags ARRAY<STRING> DEFAULT NULL,
 -- MAGIC   target_table STRING DEFAULT ''
 -- MAGIC )
 -- MAGIC LANGUAGE SQL
@@ -217,6 +231,16 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC     WHEN source_table NOT LIKE '%.%.%' THEN current_catalog() || '.' || source_table
 -- MAGIC     ELSE source_table
 -- MAGIC   END;
+-- MAGIC
+-- MAGIC   -- If tags are specified, resolve them to column names via column_tags
+-- MAGIC   IF (tags IS NOT NULL) THEN
+-- MAGIC     SET columns_to_decrypt = (
+-- MAGIC       SELECT collect_set(ct.column_name)
+-- MAGIC       FROM system.information_schema.column_tags ct
+-- MAGIC       WHERE concat_ws('.', ct.catalog_name, ct.schema_name, ct.table_name) = full_table_name
+-- MAGIC         AND array_contains(tags, ct.tag_name)
+-- MAGIC     );
+-- MAGIC   END IF;
 -- MAGIC
 -- MAGIC   -- Build the SELECT expression in a single set-based query using string_agg
 -- MAGIC   SET select_expr = (
@@ -264,8 +288,8 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 
 -- COMMAND ----------
 
--- Load the titanic CSV from the volume into a table
-CREATE OR REPLACE TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_raw') AS
+-- Load the titanic CSV from the volume into a temp view (no unencrypted data persisted)
+CREATE OR REPLACE TEMPORARY VIEW titanic_raw AS
 SELECT * FROM read_files(
   concat('/Volumes/', :catalog, '/', :schema, '/raw_files/titanic.csv'),
   format => 'csv',
@@ -274,7 +298,7 @@ SELECT * FROM read_files(
 
 -- Encrypt every column and write to a new table
 CALL aes_encrypt_table(
-  source_table => :catalog || '.' || :schema || '.titanic_raw',
+  source_table => 'titanic_raw',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
   target_table => :catalog || '.' || :schema || '.titanic_encrypted'
@@ -307,7 +331,7 @@ CALL aes_decrypt_table(
 
 -- Only encrypt the sensitive columns, leaving customer_id in the clear
 CALL aes_encrypt_table(
-  source_table => :catalog || '.' || :schema || '.titanic_raw',
+  source_table => 'titanic_raw',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
   columns_to_encrypt => ARRAY('Name', 'Sex', 'Age'),
@@ -331,7 +355,50 @@ CALL aes_decrypt_table(
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 9: Call from PySpark
+-- MAGIC ## Step 9: Encrypt by Unity Catalog column tags
+-- MAGIC
+-- MAGIC Tag columns with metadata (e.g. `pii`) and encrypt/decrypt based on those tags instead of listing column names explicitly.
+
+-- COMMAND ----------
+
+-- First, persist titanic_raw as a table so we can tag its columns
+CREATE OR REPLACE TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_tagged') AS
+SELECT * FROM titanic_raw;
+
+-- Tag the sensitive columns as PII
+ALTER TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_tagged') ALTER COLUMN Name SET TAGS ('pii' = 'name');
+ALTER TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_tagged') ALTER COLUMN Sex SET TAGS ('pii' = 'gender');
+ALTER TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_tagged') ALTER COLUMN Age SET TAGS ('pii' = 'age');
+
+-- COMMAND ----------
+
+-- Encrypt only the columns tagged as 'pii'
+CALL aes_encrypt_table(
+  source_table => :catalog || '.' || :schema || '.titanic_tagged',
+  secret_scope => :secret_scope,
+  secret_key => :secret_key,
+  tags => ARRAY('pii'),
+  target_table => :catalog || '.' || :schema || '.titanic_encrypted_by_tag'
+);
+
+-- COMMAND ----------
+
+SELECT * FROM titanic_encrypted_by_tag
+
+-- COMMAND ----------
+
+-- Decrypt the tagged columns back
+CALL aes_decrypt_table(
+  source_table => :catalog || '.' || :schema || '.titanic_encrypted_by_tag',
+  secret_scope => :secret_scope,
+  secret_key => :secret_key,
+  tags => ARRAY('pii')
+);
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ## Step 10: Call from PySpark
 -- MAGIC
 -- MAGIC The procedures are equally callable from PySpark using `spark.sql()`.
 
@@ -341,7 +408,7 @@ CALL aes_decrypt_table(
 -- MAGIC # Encrypt specific columns and return as a DataFrame
 -- MAGIC encrypted_df = spark.sql(f"""
 -- MAGIC   CALL aes_encrypt_table(
--- MAGIC     source_table => '{catalog}.{schema}.titanic_raw',
+-- MAGIC     source_table => 'titanic_raw',
 -- MAGIC     secret_scope => '{secret_scope}',
 -- MAGIC     secret_key => '{secret_key}',
 -- MAGIC     columns_to_encrypt => ARRAY('Name', 'Sex', 'Age')
@@ -355,7 +422,7 @@ CALL aes_decrypt_table(
 -- MAGIC # Encrypt all columns of a table and write to a new table
 -- MAGIC spark.sql(f"""
 -- MAGIC   CALL aes_encrypt_table(
--- MAGIC     source_table => '{catalog}.{schema}.titanic_raw',
+-- MAGIC     source_table => 'titanic_raw',
 -- MAGIC     secret_scope => '{secret_scope}',
 -- MAGIC     secret_key => '{secret_key}',
 -- MAGIC     target_table => '{catalog}.{schema}.titanic_encrypted_pyspark'
