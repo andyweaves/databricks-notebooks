@@ -110,7 +110,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC | `source_table` | STRING | The source table, view, or temp view to read from |
 -- MAGIC | `secret_scope` | STRING | The Databricks secret scope containing the AES key |
 -- MAGIC | `secret_key` | STRING | The key name within the secret scope |
--- MAGIC | `columns_to_encrypt` | ARRAY&lt;STRING&gt; | *(Optional)* Array of column names to encrypt. If `NULL` and no tags specified, encrypts all columns |
+-- MAGIC | `columns` | ARRAY&lt;STRING&gt; | *(Optional)* Array of column names to encrypt. If `NULL` and no tags specified, encrypts all columns |
 -- MAGIC | `tags` | ARRAY&lt;STRING&gt; | *(Optional)* Array of Unity Catalog column tag names — columns with any of these tags will be encrypted |
 -- MAGIC | `target_table` | STRING | *(Optional)* If provided, writes results to this table. If empty, returns a result set |
 
@@ -122,7 +122,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   source_table STRING,
 -- MAGIC   secret_scope STRING,
 -- MAGIC   secret_key STRING,
--- MAGIC   columns_to_encrypt ARRAY<STRING> DEFAULT NULL,
+-- MAGIC   columns ARRAY<STRING> DEFAULT NULL,
 -- MAGIC   tags ARRAY<STRING> DEFAULT NULL,
 -- MAGIC   target_table STRING DEFAULT ''
 -- MAGIC )
@@ -144,7 +144,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC
 -- MAGIC   -- If tags are specified, resolve them to column names via column_tags
 -- MAGIC   IF (tags IS NOT NULL) THEN
--- MAGIC     SET columns_to_encrypt = (
+-- MAGIC     SET columns = (
 -- MAGIC       SELECT collect_set(ct.column_name)
 -- MAGIC       FROM system.information_schema.column_tags ct
 -- MAGIC       WHERE concat_ws('.', ct.catalog_name, ct.schema_name, ct.table_name) = full_table_name
@@ -156,7 +156,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   SET select_expr = (
 -- MAGIC     SELECT string_agg(
 -- MAGIC       CASE
--- MAGIC         WHEN columns_to_encrypt IS NULL OR array_contains(columns_to_encrypt, column_name)
+-- MAGIC         WHEN columns IS NULL OR array_contains(columns, column_name)
 -- MAGIC         THEN 'CASE WHEN ' || column_name || ' IS NOT NULL THEN base64(aes_encrypt(CAST(' || column_name || ' AS STRING), unbase64(secret(' || encrypt_key || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ')) END AS ' || column_name
 -- MAGIC         ELSE column_name
 -- MAGIC       END,
@@ -172,7 +172,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC     SET select_expr = (
 -- MAGIC       SELECT string_agg(
 -- MAGIC         CASE
--- MAGIC           WHEN columns_to_encrypt IS NULL OR array_contains(columns_to_encrypt, col)
+-- MAGIC           WHEN columns IS NULL OR array_contains(columns, col)
 -- MAGIC           THEN 'CASE WHEN ' || col || ' IS NOT NULL THEN base64(aes_encrypt(CAST(' || col || ' AS STRING), unbase64(secret(' || encrypt_key || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ')) END AS ' || col
 -- MAGIC           ELSE col
 -- MAGIC         END,
@@ -211,7 +211,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC | `source_table` | STRING | The source table, view, or temp view to read from |
 -- MAGIC | `secret_scope` | STRING | The Databricks secret scope containing the AES key |
 -- MAGIC | `secret_key` | STRING | The key name within the secret scope |
--- MAGIC | `columns_to_decrypt` | ARRAY&lt;STRING&gt; | *(Optional)* Array of column names to decrypt. If `NULL` and no tags specified, decrypts all columns |
+-- MAGIC | `columns` | ARRAY&lt;STRING&gt; | *(Optional)* Array of column names to decrypt. If `NULL` and no tags specified, decrypts all columns |
 -- MAGIC | `tags` | ARRAY&lt;STRING&gt; | *(Optional)* Array of Unity Catalog column tag names — columns with any of these tags will be decrypted |
 -- MAGIC | `target_table` | STRING | *(Optional)* If provided, writes results to this table. If empty, returns a result set |
 
@@ -223,7 +223,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   source_table STRING,
 -- MAGIC   secret_scope STRING,
 -- MAGIC   secret_key STRING,
--- MAGIC   columns_to_decrypt ARRAY<STRING> DEFAULT NULL,
+-- MAGIC   columns ARRAY<STRING> DEFAULT NULL,
 -- MAGIC   tags ARRAY<STRING> DEFAULT NULL,
 -- MAGIC   target_table STRING DEFAULT ''
 -- MAGIC )
@@ -245,7 +245,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC
 -- MAGIC   -- If tags are specified, resolve them to column names via column_tags
 -- MAGIC   IF (tags IS NOT NULL) THEN
--- MAGIC     SET columns_to_decrypt = (
+-- MAGIC     SET columns = (
 -- MAGIC       SELECT collect_set(ct.column_name)
 -- MAGIC       FROM system.information_schema.column_tags ct
 -- MAGIC       WHERE concat_ws('.', ct.catalog_name, ct.schema_name, ct.table_name) = full_table_name
@@ -257,7 +257,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC   SET select_expr = (
 -- MAGIC     SELECT string_agg(
 -- MAGIC       CASE
--- MAGIC         WHEN columns_to_decrypt IS NULL OR array_contains(columns_to_decrypt, column_name)
+-- MAGIC         WHEN columns IS NULL OR array_contains(columns, column_name)
 -- MAGIC         THEN 'COALESCE(CAST(try_aes_decrypt(try_to_binary(' || column_name || ', ' || quote('BASE64') || '), unbase64(secret(' || decrypt_key || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ') AS STRING), ' || column_name || ') AS ' || column_name
 -- MAGIC         ELSE column_name
 -- MAGIC       END,
@@ -273,7 +273,7 @@ CREATE VOLUME IF NOT EXISTS IDENTIFIER(concat(:catalog, '.', :schema, '.raw_file
 -- MAGIC     SET select_expr = (
 -- MAGIC       SELECT string_agg(
 -- MAGIC         CASE
--- MAGIC           WHEN columns_to_decrypt IS NULL OR array_contains(columns_to_decrypt, col)
+-- MAGIC           WHEN columns IS NULL OR array_contains(columns, col)
 -- MAGIC           THEN 'COALESCE(CAST(try_aes_decrypt(try_to_binary(' || col || ', ' || quote('BASE64') || '), unbase64(secret(' || decrypt_key || ')), ' || quote('GCM') || ', ' || quote('DEFAULT') || ') AS STRING), ' || col || ') AS ' || col
 -- MAGIC           ELSE col
 -- MAGIC         END,
@@ -345,7 +345,7 @@ CALL aes_encrypt_table(
   source_table => 'titanic_raw',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
-  columns_to_encrypt => ARRAY('Name', 'Sex', 'Age'),
+  columns => ARRAY('Name', 'Sex', 'Age'),
   target_table => :catalog || '.' || :schema || '.titanic_encrypted_pii_columns_only'
 );
 
@@ -360,7 +360,7 @@ CALL aes_decrypt_table(
   source_table => :catalog || '.' || :schema || '.titanic_encrypted_pii_columns_only',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
-  columns_to_decrypt => NULL
+  columns => NULL
 );
 
 -- COMMAND ----------
@@ -426,7 +426,7 @@ CALL aes_decrypt_table(
 -- MAGIC     source_table => 'titanic_raw',
 -- MAGIC     secret_scope => '{secret_scope}',
 -- MAGIC     secret_key => '{secret_key}',
--- MAGIC     columns_to_encrypt => ARRAY('Name', 'Sex', 'Age')
+-- MAGIC     columns => ARRAY('Name', 'Sex', 'Age')
 -- MAGIC   )
 -- MAGIC """)
 -- MAGIC display(encrypted_df)
