@@ -366,7 +366,7 @@ CALL aes_decrypt_table(
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 9: Encrypt by Databricks data-classification system tags
+-- MAGIC ## Step 9: Encrypt/decrypt by Databricks data-classification system tags
 -- MAGIC
 -- MAGIC Databricks can [automatically classify columns](https://docs.databricks.com/aws/en/data-governance/unity-catalog/data-classification-tags) by scanning table data and assigning system tags such as `class.name`, `class.email_address`, `class.age`, etc.
 -- MAGIC
@@ -379,6 +379,11 @@ CALL aes_decrypt_table(
 -- Persist titanic_raw as a table so data classification can scan it
 CREATE OR REPLACE TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_tagged') AS
 SELECT * FROM titanic_raw;
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC Now configure data classification to run on the target catalog. Please see the docs ([AWS](https://docs.databricks.com/aws/en/data-governance/unity-catalog/data-classification), [Azure](https://learn.microsoft.com/en-gb/azure/databricks/data-governance/unity-catalog/data-classification), [GCP](https://docs.databricks.com/gcp/en/data-governance/unity-catalog/data-classification)) for more information.
 
 -- COMMAND ----------
 
