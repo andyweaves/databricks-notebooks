@@ -366,29 +366,28 @@ CALL aes_decrypt_table(
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## Step 9: Encrypt by Unity Catalog column tags
+-- MAGIC ## Step 9: Encrypt by Databricks data-classification system tags
 -- MAGIC
--- MAGIC Tag columns with metadata (e.g. `pii`) and encrypt/decrypt based on those tags instead of listing column names explicitly.
+-- MAGIC Databricks can [automatically classify columns](https://docs.databricks.com/aws/en/data-governance/unity-catalog/data-classification-tags) by scanning table data and assigning system tags such as `class.name`, `class.email_address`, `class.age`, etc.
+-- MAGIC
+-- MAGIC Instead of listing column names explicitly, you can encrypt/decrypt every column that the classifier has tagged — just pass the relevant `class.*` tag names to the `tags` parameter.
+-- MAGIC
+-- MAGIC > **Note:** System tags are assigned asynchronously after data is written. If the tags haven't appeared yet, you can trigger classification manually via the Catalog Explorer UI or by calling `SELECT * FROM system.information_schema.column_tags WHERE table_name = 'titanic_tagged'` to check.
 
 -- COMMAND ----------
 
--- First, persist titanic_raw as a table so we can tag its columns
+-- Persist titanic_raw as a table so data classification can scan it
 CREATE OR REPLACE TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_tagged') AS
 SELECT * FROM titanic_raw;
 
--- Tag the sensitive columns as PII
-ALTER TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_tagged') ALTER COLUMN Name SET TAGS ('pii' = 'name');
-ALTER TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_tagged') ALTER COLUMN Sex SET TAGS ('pii' = 'gender');
-ALTER TABLE IDENTIFIER(:catalog || '.' || :schema || '.titanic_tagged') ALTER COLUMN Age SET TAGS ('pii' = 'age');
-
 -- COMMAND ----------
 
--- Encrypt only the columns tagged as 'pii'
+-- Encrypt only the columns that the classifier tagged as class.name or class.age
 CALL aes_encrypt_table(
   source_table => :catalog || '.' || :schema || '.titanic_tagged',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
-  tags => ARRAY('pii'),
+  tags => ARRAY('class.name', 'class.age'),
   target_table => :catalog || '.' || :schema || '.titanic_encrypted_by_tag'
 );
 
@@ -403,7 +402,7 @@ CALL aes_decrypt_table(
   source_table => :catalog || '.' || :schema || '.titanic_encrypted_by_tag',
   secret_scope => :secret_scope,
   secret_key => :secret_key,
-  tags => ARRAY('pii')
+  tags => ARRAY('class.name', 'class.age')
 );
 
 -- COMMAND ----------
