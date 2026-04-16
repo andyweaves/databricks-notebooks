@@ -1,0 +1,8 @@
+# ROM and game files (copyrighted, not for distribution)
+static/roms/*.rom
+static/roms/*.bin
+static/games/*.adf
+static/games/*.adz
+static/games/*.ipf
+static/games/*.dms
+static/games/*.zip
