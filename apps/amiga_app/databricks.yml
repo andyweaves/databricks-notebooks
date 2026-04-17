@@ -1,6 +1,15 @@
 bundle:
   name: amiga_bricks
 
+sync:
+  include:
+    - static/roms/*.rom
+    - static/roms/*.bin
+    - static/games/*.adf
+    - static/games/*.adz
+    - static/games/*.dms
+    - static/games/*.zip
+
 resources:
   apps:
     amiga_bricks:

@@ -6,3 +6,5 @@ static/games/*.adz
 static/games/*.ipf
 static/games/*.dms
 static/games/*.zip
+
+.databricks
