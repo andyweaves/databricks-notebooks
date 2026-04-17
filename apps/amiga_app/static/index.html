@@ -332,6 +332,11 @@
     </header>
 
     <div class="container">
+        <div class="game-selector" id="rom-selector" style="display:none">
+            <label for="rom-select">ROM:</label>
+            <select id="rom-select"></select>
+        </div>
+
         <div class="game-selector" id="game-selector">
             <label for="game-select"><span class="disk-icon"></span>Game:</label>
             <select id="game-select"></select>
@@ -460,23 +465,65 @@
             const romEl  = document.getElementById("rom-status");
             const gameEl = document.getElementById("game-status");
 
-            // Check ROM availability — prefer API discovery, fall back to default
-            let romUrl = DEFAULT_ROM;
+            // Discover ROMs and build selector if multiple are available
+            let roms = [];
             try {
                 const romResp = await fetch("/api/roms");
                 const romData = await romResp.json();
-                if (romData.roms && romData.roms.length > 0) {
-                    romUrl = "/static/roms/" + romData.roms[0].filename;
+                roms = romData.roms || [];
+            } catch { /* fall through */ }
+
+            // Restore saved ROM selection
+            let savedRom = null;
+            try { savedRom = localStorage.getItem("selectedRom"); } catch {}
+
+            let selectedRom = null;
+            if (savedRom) {
+                selectedRom = roms.find(r => r.filename === savedRom) || null;
+            }
+
+            if (roms.length > 1) {
+                const romSelector = document.getElementById("rom-selector");
+                const romSelect = document.getElementById("rom-select");
+                romSelector.style.display = "block";
+
+                roms.forEach(r => {
+                    const opt = document.createElement("option");
+                    opt.value = r.filename;
+                    opt.textContent = r.name + " (" + detectModel(r.filename) + ")";
+                    if (selectedRom && r.filename === selectedRom.filename) {
+                        opt.selected = true;
+                    }
+                    romSelect.appendChild(opt);
+                });
+
+                if (!selectedRom) {
+                    selectedRom = roms.find(r => r.filename === romSelect.value) || roms[0];
                 }
-            } catch { /* fall through to default */ }
+
+                romSelect.addEventListener("change", () => {
+                    try { localStorage.setItem("selectedRom", romSelect.value); } catch {}
+                    location.reload();
+                });
+            } else if (roms.length === 1) {
+                selectedRom = roms[0];
+            }
+
+            let romUrl = selectedRom
+                ? "/static/roms/" + selectedRom.filename
+                : DEFAULT_ROM;
 
             const romOk = await fileExists(romUrl);
+            const romModel = selectedRom ? detectModel(selectedRom.filename) : "A500";
             romEl.innerHTML = romOk
-                ? '<span class="disk-icon"></span>ROM: OK'
+                ? '<span class="disk-icon"></span>ROM: ' + romModel
                 : '<span class="disk-icon"></span>ROM: MISSING';
             romEl.className = romOk ? "ok" : "missing";
 
             // Determine which game to use (saved selection > API > default)
+            // Filter games by ROM model: A500 shows floppy (ADF) games,
+            // A1200+ shows WHDLoad (HDF/LHA) games, all models show all if
+            // only one type is available.
             let savedKey = getSavedGame();
             let selectedGame = null;
             let gameOk = false;
@@ -484,14 +531,30 @@
             try {
                 const resp = await fetch("/api/games");
                 const data = await resp.json();
-                const games = data.games || [];
+                const allGames = data.games || [];
 
-                // Try to restore saved selection
+                const isA500 = romModel === "A500";
+                const floppyTypes = ["adf", "adz", "dms", "zip"];
+                const hdTypes = ["hdf", "lha"];
+
+                const floppyGames = allGames.filter(g => floppyTypes.includes(g.type));
+                const hdGames = allGames.filter(g => hdTypes.includes(g.type));
+
+                // Show floppy games for A500, WHDLoad games for A1200+
+                // If only one category exists, show all regardless of model
+                let games;
+                if (floppyGames.length > 0 && hdGames.length > 0) {
+                    games = isA500 ? floppyGames : hdGames;
+                } else {
+                    games = allGames;
+                }
+
+                // Try to restore saved selection (within filtered list)
                 if (savedKey) {
                     selectedGame = games.find(g => gameKey(g) === savedKey) || null;
                 }
 
-                if (games.length > 1) {
+                if (games.length >= 1) {
                     const selector = document.getElementById("game-selector");
                     const select  = document.getElementById("game-select");
                     selector.style.display = "block";
@@ -499,9 +562,11 @@
                     games.forEach(g => {
                         const opt = document.createElement("option");
                         opt.value = gameKey(g);
-                        opt.textContent = g.disks
-                            ? g.name + " (" + g.disks.length + " disks)"
-                            : g.name;
+                        const isHD = hdTypes.includes(g.type);
+                        const suffix = g.disks
+                            ? " (" + g.disks.length + " disks)"
+                            : isHD ? " [WHDLoad]" : "";
+                        opt.textContent = g.name + suffix;
                         if (selectedGame && gameKey(g) === gameKey(selectedGame)) {
                             opt.selected = true;
                         }
@@ -545,14 +610,27 @@
             if (romOk && gameOk) {
                 document.getElementById("setup-notice").style.display = "none";
                 const url = selectedGame ? gameUrl(selectedGame) : DEFAULT_GAME;
-                startEmulator(url, romUrl, ejsPath);
+                const gameType = selectedGame ? (selectedGame.type || "adf") : "adf";
+                startEmulator(url, romUrl, ejsPath, romModel, gameType);
             }
         }
 
         // ----------------------------------------------------------------
         //  EmulatorJS bootstrap
         // ----------------------------------------------------------------
-        function startEmulator(gameUrl, biosUrl, ejsPath) {
+        /** Detect Amiga model from ROM filename. */
+        function detectModel(romFilename) {
+            const n = romFilename.toLowerCase();
+            if (n.includes("cd32"))
+                return "CD32";
+            if (n.includes("310") || n.includes("3.1") || n.includes("300") || n.includes("3.0"))
+                return "A1200";
+            if (n.includes("200") || n.includes("204") || n.includes("2.0"))
+                return "A600";
+            return "A500";
+        }
+
+        function startEmulator(gameUrl, biosUrl, ejsPath, model, gameType) {
             // EmulatorJS reads these globals before loading
             window.EJS_player   = "#game";
             window.EJS_core     = "puae";
@@ -562,17 +640,27 @@
 
             // Cache-bust patched EmulatorJS files
             window.EJS_paths = {
-                "emulator.min.js": ejsPath + "emulator.min.js?v=12",
+                "emulator.min.js": ejsPath + "emulator.min.js?v=14",
             };
 
-            // Default settings for a good Amiga experience
+            // Build options based on model and game type
+            // WHDLoad mode: LHA archives need "files" (helper boot env),
+            // pre-made HDF images need "disabled" (boot directly)
+            const whdMode = gameType === "lha" ? "files"
+                          : gameType === "hdf" ? "disabled"
+                          : "disabled";
             window.EJS_defaultOptions = {
-                "puae_model": "A500",
+                "puae_model": model || "A500",
                 "puae_cpu_speed": "real",
                 "puae_video_standard": "PAL",
                 "puae_floppy_speed": "800",
                 "puae_floppy_multidrive": "enabled",
+                "puae_use_whdload": whdMode,
             };
+
+            console.log("[AMIGA BRICKS] Model:", model,
+                        "| Type:", gameType,
+                        "| WHDLoad mode:", whdMode);
 
             // Log game file and virtual filesystem on start
             window.EJS_onGameStart = function() {

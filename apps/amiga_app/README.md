@@ -20,6 +20,16 @@ copyrighted):
    - Supported formats: `.adf`, `.adz`, `.dms`, `.zip`
    - If multiple games are present a dropdown selector is shown.
 
+### Tested configuration
+
+This app has been primarily tested with **A500 games and the Kickstart 1.3
+ROM** (`amiga-os-130.rom`). Other ROM/model combinations (A1200, CD32) are
+supported by the ROM selector in the UI, and should work in theory, but
+you will need to ensure you have the correct ROM for your game. Even with
+the right combination, some games may not work due to multi-disk
+limitations, bad ADF dumps, or copy protection issues. See
+[Limitations](#limitations) for details.
+
 ## Quick start (local)
 
 ```bash
@@ -288,6 +298,11 @@ amiga_app/
 
 - **Single-disk games work without issues.** Games that fit on a single
   ADF file work perfectly.
+
+- **HDF files (hard drive images) are not supported.** The PUAE WASM
+  core crashes during initialization when loading HDF files. This
+  includes WHDLoad installs. Only floppy disk formats (ADF, ADZ, DMS)
+  are supported.
 
 - **IPF files are not supported.** They require the proprietary
   `capsimg.so` library which cannot be compiled into the WASM core.

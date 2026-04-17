@@ -187,6 +187,7 @@ def _group_games() -> list[dict]:
                     for n, p in sorted_disks
                 ],
                 "has_save_disk": has_save_disk,
+                "type": sorted_disks[0][1].suffix.lower().lstrip("."),
             })
         else:
             # Single-disk game(s) — each file is its own entry
@@ -197,6 +198,7 @@ def _group_games() -> list[dict]:
                     "slug": None,
                     "disks": None,
                     "has_save_disk": has_save_disk,
+                    "type": path.suffix.lower().lstrip("."),
                 })
 
     return sorted(games, key=lambda g: g["name"].lower())
